@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 import asyncio
 import httpx
 import json
+import os
 import platform
 import subprocess
 import tarfile
@@ -202,9 +203,28 @@ class CaddyService:
             }
 
         try:
+            # Stelle sicher, dass Config-Verzeichnis existiert
+            CADDY_JSON_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+
             # Erstelle Standard-Config wenn nicht vorhanden
             if not CADDY_JSON_CONFIG.exists():
                 await self.create_default_config()
+                print(f"✅ Standard-Config erstellt: {CADDY_JSON_CONFIG}")
+
+            # Prüfe ob die Binary existiert und ausführbar ist
+            if not CADDY_BINARY.exists():
+                return {
+                    "success": False,
+                    "error": f"Caddy Binary nicht gefunden: {CADDY_BINARY}"
+                }
+
+            if not os.access(CADDY_BINARY, os.X_OK):
+                return {
+                    "success": False,
+                    "error": f"Caddy Binary ist nicht ausführbar: {CADDY_BINARY}"
+                }
+
+            print(f"🚀 Starte Caddy mit Config: {CADDY_JSON_CONFIG}")
 
             # Starte Caddy mit JSON-Config
             self.process = subprocess.Popen(
@@ -230,12 +250,18 @@ class CaddyService:
                 }
             else:
                 stderr = self.process.stderr.read().decode() if self.process.stderr else ""
+                stdout = self.process.stdout.read().decode() if self.process.stdout else ""
+                error_msg = f"Caddy konnte nicht gestartet werden.\nSTDERR: {stderr}\nSTDOUT: {stdout}"
+                print(f"❌ {error_msg}")
                 return {
                     "success": False,
-                    "error": f"Caddy konnte nicht gestartet werden: {stderr}"
+                    "error": error_msg
                 }
 
         except Exception as e:
+            print(f"❌ Start-Fehler: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {
                 "success": False,
                 "error": f"Startfehler: {str(e)}"
