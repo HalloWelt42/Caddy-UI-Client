@@ -9,7 +9,6 @@ from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QFont
 import qtawesome as qta
 
-
 class StatusIndicator(QFrame):
     """Status-Indikator Widget"""
 
@@ -106,7 +105,6 @@ class StatusIndicator(QFrame):
 
         self.status_icon.setPixmap(icon.pixmap(24, 24))
 
-
 class MetricDisplay(QGroupBox):
     """Metrik-Anzeige Widget"""
 
@@ -134,7 +132,6 @@ class MetricDisplay(QGroupBox):
         """Wert und Einheit setzen"""
         self.value_label.setText(value)
         self.unit_label.setText(unit)
-
 
 class DashboardWidget(QWidget):
     """Haupt-Dashboard Widget"""
@@ -203,21 +200,6 @@ class DashboardWidget(QWidget):
         self.btn_restart = QPushButton(qta.icon('fa5s.sync'), "Neustart")
         self.btn_restart.clicked.connect(self.restart_caddy.emit)
         control_layout.addWidget(self.btn_restart, 0, 4)
-
-        # Docker Controls
-        docker_label = QLabel("Docker:")
-        docker_label.setStyleSheet("font-weight: bold;")
-        control_layout.addWidget(docker_label, 1, 0)
-
-        self.btn_docker_start = QPushButton(qta.icon('fa5s.play'), "Starten")
-        self.btn_docker_start.setObjectName("successButton")
-        self.btn_docker_start.clicked.connect(self.start_docker.emit)
-        control_layout.addWidget(self.btn_docker_start, 1, 2)
-
-        self.btn_docker_stop = QPushButton(qta.icon('fa5s.stop'), "Stoppen")
-        self.btn_docker_stop.setObjectName("dangerButton")
-        self.btn_docker_stop.clicked.connect(self.stop_docker.emit)
-        control_layout.addWidget(self.btn_docker_stop, 1, 3)
 
         layout.addWidget(control_group)
 
