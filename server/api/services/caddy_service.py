@@ -3,6 +3,7 @@ Caddy Service - Installation und Verwaltung
 """
 import sys
 from pathlib import Path
+
 # Projekt-Root zum Python-Path hinzufügen
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
@@ -19,13 +20,15 @@ from typing import Dict, List, Optional, Any
 from enum import Enum
 
 from server.config.settings import settings
-from shared.utils.paths import CADDY_JSON_CONFIG, CADDY_BINARY, CERTS_DIR
+from shared.utils.paths import CADDY_JSON_CONFIG, CADDY_BINARY, CERTS_DIR, CADDYFILE
+
 
 class CaddyStatus(str, Enum):
     RUNNING = "running"
     STOPPED = "stopped"
     NOT_INSTALLED = "not_installed"
     ERROR = "error"
+
 
 class CaddyService:
     def __init__(self):
@@ -204,12 +207,11 @@ class CaddyService:
 
         try:
             # Stelle sicher, dass Config-Verzeichnis existiert
-            CADDY_JSON_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+            CADDYFILE.parent.mkdir(parents=True, exist_ok=True)
 
             # Erstelle Standard-Config wenn nicht vorhanden
-            if not CADDY_JSON_CONFIG.exists():
+            if not CADDYFILE.exists():
                 await self.create_default_config()
-                print(f"✅ Standard-Config erstellt: {CADDY_JSON_CONFIG}")
 
             # Prüfe ob die Binary existiert und ausführbar ist
             if not CADDY_BINARY.exists():
@@ -224,15 +226,15 @@ class CaddyService:
                     "error": f"Caddy Binary ist nicht ausführbar: {CADDY_BINARY}"
                 }
 
-            print(f"🚀 Starte Caddy mit Config: {CADDY_JSON_CONFIG}")
+            print(f"🚀 Starte Caddy mit Caddyfile: {CADDYFILE}")
 
-            # Starte Caddy mit JSON-Config
+            # Starte Caddy mit Caddyfile
             self.process = subprocess.Popen(
                 [
                     str(CADDY_BINARY),
                     "run",
-                    "--config", str(CADDY_JSON_CONFIG),
-                    "--adapter", "json"
+                    "--config", str(CADDYFILE),
+                    "--adapter", "caddyfile"
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -319,83 +321,68 @@ class CaddyService:
 
     async def create_default_config(self) -> None:
         """Erstellt eine Standard-Caddy-Konfiguration"""
-        config = {
-            "admin": {
-                "listen": f"{settings.caddy_admin_host}:{settings.caddy_admin_port}"
-            },
-            "apps": {
-                "http": {
-                    "servers": {
-                        "srv0": {
-                            "listen": [":443"],
-                            "routes": []
-                        }
-                    }
-                }
-            }
-        }
+        # Erstelle Caddyfile statt JSON
+        caddyfile_content = """# Caddy Configuration
+# Admin API
+{
+    admin localhost:2019
+}
 
-        CADDY_JSON_CONFIG.parent.mkdir(parents=True, exist_ok=True)
-        with open(CADDY_JSON_CONFIG, "w") as f:
-            json.dump(config, f, indent=2)
+# Default site
+:443 {
+    respond "Caddy is running!"
+}
+"""
+
+        CADDYFILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(CADDYFILE, "w") as f:
+            f.write(caddyfile_content)
+
+        print(f"✅ Standard Caddyfile erstellt: {CADDYFILE}")
 
     async def add_route(self, domain: str, upstream: str, path: str = "/") -> Dict[str, Any]:
         """Fügt eine neue Route hinzu"""
         try:
-            # Aktuelle Config laden
-            response = await self.client.get(f"{settings.caddy_api_url}/config/")
-            if response.status_code != 200:
-                return {
-                    "success": False,
-                    "error": "Konnte aktuelle Konfiguration nicht laden"
-                }
+            # Lese aktuelle Caddyfile
+            if not CADDYFILE.exists():
+                await self.create_default_config()
 
-            config = response.json()
+            with open(CADDYFILE, "r") as f:
+                current_config = f.read()
 
-            # Neue Route erstellen
-            new_route = {
-                "match": [{"host": [domain]}],
-                "handle": [
-                    {
-                        "handler": "reverse_proxy",
-                        "upstreams": [{"dial": upstream}]
+            # Füge neue Route hinzu
+            new_route = f"""
+# Route für {domain}
+{domain} {{
+    reverse_proxy {upstream}
+}}
+"""
+
+            # Schreibe aktualisierte Config
+            with open(CADDYFILE, "w") as f:
+                f.write(current_config + new_route)
+
+            # Reload Caddy wenn es läuft
+            status = await self.get_status()
+            if status["status"] == CaddyStatus.RUNNING:
+                # Caddy reload
+                result = subprocess.run(
+                    [str(CADDY_BINARY), "reload", "--config", str(CADDYFILE)],
+                    capture_output=True,
+                    text=True,
+                    cwd=str(settings.project_root)
+                )
+
+                if result.returncode != 0:
+                    return {
+                        "success": False,
+                        "error": f"Reload fehlgeschlagen: {result.stderr}"
                     }
-                ]
+
+            return {
+                "success": True,
+                "message": f"Route {domain} -> {upstream} hinzugefügt"
             }
-
-            if path != "/":
-                new_route["match"][0]["path"] = [path]
-
-            # Route zur Config hinzufügen
-            if "apps" not in config:
-                config["apps"] = {}
-            if "http" not in config["apps"]:
-                config["apps"]["http"] = {"servers": {}}
-            if "srv0" not in config["apps"]["http"]["servers"]:
-                config["apps"]["http"]["servers"]["srv0"] = {"listen": [":443"], "routes": []}
-
-            config["apps"]["http"]["servers"]["srv0"]["routes"].append(new_route)
-
-            # Config updaten
-            response = await self.client.put(
-                f"{settings.caddy_api_url}/config/",
-                json=config
-            )
-
-            if response.status_code == 200:
-                # Config auch lokal speichern
-                with open(CADDY_JSON_CONFIG, "w") as f:
-                    json.dump(config, f, indent=2)
-
-                return {
-                    "success": True,
-                    "message": f"Route {domain} -> {upstream} hinzugefügt"
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": f"Fehler beim Update: {response.text}"
-                }
 
         except Exception as e:
             return {
@@ -406,51 +393,62 @@ class CaddyService:
     async def remove_route(self, domain: str) -> Dict[str, Any]:
         """Entfernt eine Route"""
         try:
-            response = await self.client.get(f"{settings.caddy_api_url}/config/")
-            if response.status_code != 200:
+            if not CADDYFILE.exists():
                 return {
                     "success": False,
-                    "error": "Konnte aktuelle Konfiguration nicht laden"
+                    "error": f"Caddyfile nicht gefunden"
                 }
 
-            config = response.json()
+            with open(CADDYFILE, "r") as f:
+                lines = f.readlines()
 
-            # Route finden und entfernen
-            routes = config.get("apps", {}).get("http", {}).get("servers", {}).get("srv0", {}).get("routes", [])
-            original_count = len(routes)
+            # Finde und entferne den Domain-Block
+            new_lines = []
+            i = 0
+            found = False
+            while i < len(lines):
+                line = lines[i]
+                # Prüfe ob dies der gesuchte Domain-Block ist
+                if domain in line and "{" in line and not line.strip().startswith("#"):
+                    found = True
+                    # Überspringe diesen Block
+                    while i < len(lines) and "}" not in lines[i]:
+                        i += 1
+                    i += 1  # Überspringe auch die schließende Klammer
+                    continue
+                new_lines.append(line)
+                i += 1
 
-            routes = [
-                r for r in routes
-                if not (r.get("match", [{}])[0].get("host", [None])[0] == domain)
-            ]
-
-            if len(routes) == original_count:
+            if not found:
                 return {
                     "success": False,
                     "error": f"Route für {domain} nicht gefunden"
                 }
 
-            config["apps"]["http"]["servers"]["srv0"]["routes"] = routes
+            # Schreibe aktualisierte Config
+            with open(CADDYFILE, "w") as f:
+                f.writelines(new_lines)
 
-            # Config updaten
-            response = await self.client.put(
-                f"{settings.caddy_api_url}/config/",
-                json=config
-            )
+            # Reload Caddy wenn es läuft
+            status = await self.get_status()
+            if status["status"] == CaddyStatus.RUNNING:
+                result = subprocess.run(
+                    [str(CADDY_BINARY), "reload", "--config", str(CADDYFILE)],
+                    capture_output=True,
+                    text=True,
+                    cwd=str(settings.project_root)
+                )
 
-            if response.status_code == 200:
-                with open(CADDY_JSON_CONFIG, "w") as f:
-                    json.dump(config, f, indent=2)
+                if result.returncode != 0:
+                    return {
+                        "success": False,
+                        "error": f"Reload fehlgeschlagen: {result.stderr}"
+                    }
 
-                return {
-                    "success": True,
-                    "message": f"Route für {domain} entfernt"
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": f"Fehler beim Update: {response.text}"
-                }
+            return {
+                "success": True,
+                "message": f"Route für {domain} entfernt"
+            }
 
         except Exception as e:
             return {
@@ -460,28 +458,37 @@ class CaddyService:
 
     async def get_routes(self) -> List[Dict[str, Any]]:
         """Listet alle konfigurierten Routes auf"""
+        routes = []
+
+        if not CADDYFILE.exists():
+            return routes
+
         try:
-            response = await self.client.get(f"{settings.caddy_api_url}/config/")
-            if response.status_code != 200:
-                return []
+            with open(CADDYFILE, "r") as f:
+                lines = f.readlines()
 
-            config = response.json()
-            routes = config.get("apps", {}).get("http", {}).get("servers", {}).get("srv0", {}).get("routes", [])
+            # Parse Caddyfile für Routes (vereinfacht)
+            i = 0
+            while i < len(lines):
+                line = lines[i].strip()
+                # Suche nach Domain-Blöcken
+                if line and not line.startswith("#") and "{" in line:
+                    domain = line.split("{")[0].strip()
+                    # Suche nach reverse_proxy in diesem Block
+                    i += 1
+                    while i < len(lines) and "}" not in lines[i]:
+                        if "reverse_proxy" in lines[i]:
+                            upstream = lines[i].replace("reverse_proxy", "").strip()
+                            routes.append({
+                                "domain": domain,
+                                "path": "/",
+                                "upstream": upstream
+                            })
+                            break
+                        i += 1
+                i += 1
 
-            result = []
-            for route in routes:
-                match = route.get("match", [{}])[0]
-                handle = route.get("handle", [{}])[0]
-
-                if handle.get("handler") == "reverse_proxy":
-                    upstream = handle.get("upstreams", [{}])[0].get("dial", "")
-                    result.append({
-                        "domain": match.get("host", [""])[0],
-                        "path": match.get("path", ["/"])[0] if "path" in match else "/",
-                        "upstream": upstream
-                    })
-
-            return result
+            return routes
 
         except Exception:
             return []
