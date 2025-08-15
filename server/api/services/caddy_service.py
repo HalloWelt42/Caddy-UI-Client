@@ -321,16 +321,26 @@ class CaddyService:
 
     async def create_default_config(self) -> None:
         """Erstellt eine Standard-Caddy-Konfiguration"""
-        # Erstelle Caddyfile statt JSON
+        # Erstelle Caddyfile mit automatischem HTTPS
         caddyfile_content = """# Caddy Configuration
 # Admin API
 {
     admin localhost:2019
+    # Automatisches HTTPS mit Let's Encrypt
+    email admin@localhost
+    # Lokale CA für Entwicklung
+    local_certs
 }
 
-# Default site
+# Default site mit automatischem HTTPS
 :443 {
-    respond "Caddy is running!"
+    tls internal
+    respond "Caddy is running with HTTPS!"
+}
+
+# HTTP to HTTPS redirect
+:80 {
+    redir https://{host}{uri} permanent
 }
 """
 
@@ -338,7 +348,7 @@ class CaddyService:
         with open(CADDYFILE, "w") as f:
             f.write(caddyfile_content)
 
-        print(f"✅ Standard Caddyfile erstellt: {CADDYFILE}")
+        print(f"✅ Standard Caddyfile mit HTTPS erstellt: {CADDYFILE}")
 
     async def add_route(self, domain: str, upstream: str, path: str = "/") -> Dict[str, Any]:
         """Fügt eine neue Route hinzu"""
@@ -350,8 +360,22 @@ class CaddyService:
             with open(CADDYFILE, "r") as f:
                 current_config = f.read()
 
-            # Füge neue Route hinzu
-            new_route = f"""
+            # Bestimme ob es eine lokale Domain ist
+            is_local = domain.endswith('.local') or domain == 'localhost' or '.' not in domain
+
+            # Füge neue Route mit HTTPS hinzu
+            if is_local:
+                # Lokale Domain mit internem Zertifikat
+                new_route = f"""
+# Route für {domain}
+{domain} {{
+    tls internal
+    reverse_proxy {upstream}
+}}
+"""
+            else:
+                # Öffentliche Domain mit Let's Encrypt
+                new_route = f"""
 # Route für {domain}
 {domain} {{
     reverse_proxy {upstream}
@@ -367,7 +391,7 @@ class CaddyService:
             if status["status"] == CaddyStatus.RUNNING:
                 # Caddy reload
                 result = subprocess.run(
-                    [str(CADDY_BINARY), "reload", "--config", str(CADDYFILE)],
+                    [str(CADDY_BINARY), "reload", "--config", str(CADDYFILE), "--adapter", "caddyfile"],
                     capture_output=True,
                     text=True,
                     cwd=str(settings.project_root)
@@ -381,7 +405,7 @@ class CaddyService:
 
             return {
                 "success": True,
-                "message": f"Route {domain} -> {upstream} hinzugefügt"
+                "message": f"Route {domain} -> {upstream} mit HTTPS hinzugefügt"
             }
 
         except Exception as e:

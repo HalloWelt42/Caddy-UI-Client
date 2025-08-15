@@ -15,6 +15,7 @@ from client.ui.widgets.dashboard import DashboardWidget
 from client.ui.widgets.route_manager import RouteManagerWidget
 from client.services.api_client import APIClient
 
+
 class MainWindow(QMainWindow):
     """Hauptfenster der Anwendung"""
 
@@ -50,6 +51,11 @@ class MainWindow(QMainWindow):
         # Routes Tab
         self.route_manager = RouteManagerWidget()
         self.tabs.addTab(self.route_manager, qta.icon('fa5s.route'), "Routes")
+
+        # Docker Tab
+        from client.ui.widgets.docker_manager import DockerManagerWidget
+        self.docker_manager = DockerManagerWidget()
+        self.tabs.addTab(self.docker_manager, qta.icon('fa5b.docker'), "Docker")
 
         layout.addWidget(self.tabs)
 
@@ -121,13 +127,43 @@ class MainWindow(QMainWindow):
         """Timer für regelmäßige Updates einrichten"""
         # Status Update Timer
         self.status_timer = QTimer()
-        self.status_timer.timeout.connect(self.update_status)
+        self.status_timer.timeout.connect(self.safe_update_status)
         self.status_timer.start(5000)  # Alle 5 Sekunden
 
         # Metrics Update Timer
         self.metrics_timer = QTimer()
-        self.metrics_timer.timeout.connect(self.update_metrics)
+        self.metrics_timer.timeout.connect(self.safe_update_metrics)
         self.metrics_timer.start(2000)  # Alle 2 Sekunden
+
+        # Flags für laufende Updates
+        self.status_updating = False
+        self.metrics_updating = False
+
+    def safe_update_status(self):
+        """Sicheres Status-Update ohne Überschneidungen"""
+        if not self.status_updating:
+            self.status_updating = True
+            asyncio.create_task(self._update_status_async())
+
+    async def _update_status_async(self):
+        """Async Status Update"""
+        try:
+            await self.update_status()
+        finally:
+            self.status_updating = False
+
+    def safe_update_metrics(self):
+        """Sicheres Metriken-Update ohne Überschneidungen"""
+        if not self.metrics_updating:
+            self.metrics_updating = True
+            asyncio.create_task(self._update_metrics_async())
+
+    async def _update_metrics_async(self):
+        """Async Metrics Update"""
+        try:
+            await self.update_metrics()
+        finally:
+            self.metrics_updating = False
 
     # ============= Async Slots =============
 
