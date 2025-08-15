@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 
 from server.config.settings import settings
 from server.api.routes import caddy, monitoring
-from server.api.services.monitor_service import monitor_service
+from server.api.services import monitor_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
