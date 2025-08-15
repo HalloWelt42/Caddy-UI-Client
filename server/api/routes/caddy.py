@@ -9,17 +9,15 @@ from server.api.models.caddy_config import (
     RouteRequest, RouteResponse, StatusResponse,
     OperationResponse, BackupRequest, RestoreRequest
 )
-from server.api.services.caddy_service import caddy_service
+from server.api.services import caddy_service
 
 router = APIRouter(prefix="/api/caddy", tags=["caddy"])
-
 
 @router.get("/status", response_model=StatusResponse)
 async def get_status():
     """Caddy-Status abrufen"""
     status = await caddy_service.get_status()
     return StatusResponse(**status)
-
 
 @router.post("/install")
 async def install_caddy():
@@ -29,7 +27,6 @@ async def install_caddy():
         return OperationResponse(**result)
     else:
         raise HTTPException(status_code=400, detail=result.get("error"))
-
 
 @router.websocket("/install/progress")
 async def install_progress(websocket: WebSocket):
@@ -55,7 +52,6 @@ async def install_progress(websocket: WebSocket):
     finally:
         await websocket.close()
 
-
 @router.post("/start", response_model=OperationResponse)
 async def start_caddy():
     """Caddy starten"""
@@ -64,7 +60,6 @@ async def start_caddy():
         return OperationResponse(**result)
     else:
         raise HTTPException(status_code=400, detail=result.get("error"))
-
 
 @router.post("/stop", response_model=OperationResponse)
 async def stop_caddy():
@@ -75,7 +70,6 @@ async def stop_caddy():
     else:
         raise HTTPException(status_code=400, detail=result.get("error"))
 
-
 @router.post("/restart", response_model=OperationResponse)
 async def restart_caddy():
     """Caddy neu starten"""
@@ -85,13 +79,11 @@ async def restart_caddy():
     else:
         raise HTTPException(status_code=400, detail=result.get("error"))
 
-
 @router.get("/routes", response_model=List[RouteResponse])
 async def get_routes():
     """Alle Routes abrufen"""
     routes = await caddy_service.get_routes()
     return [RouteResponse(**route) for route in routes]
-
 
 @router.post("/routes", response_model=OperationResponse)
 async def add_route(route: RouteRequest):
@@ -106,7 +98,6 @@ async def add_route(route: RouteRequest):
     else:
         raise HTTPException(status_code=400, detail=result.get("error"))
 
-
 @router.delete("/routes/{domain}", response_model=OperationResponse)
 async def remove_route(domain: str):
     """Route entfernen"""
@@ -115,7 +106,6 @@ async def remove_route(domain: str):
         return OperationResponse(**result)
     else:
         raise HTTPException(status_code=404, detail=result.get("error"))
-
 
 @router.post("/backup", response_model=OperationResponse)
 async def backup_config(request: BackupRequest):
@@ -126,7 +116,6 @@ async def backup_config(request: BackupRequest):
     else:
         raise HTTPException(status_code=400, detail=result.get("error"))
 
-
 @router.post("/restore", response_model=OperationResponse)
 async def restore_config(request: RestoreRequest):
     """Konfiguration wiederherstellen"""
@@ -135,7 +124,6 @@ async def restore_config(request: RestoreRequest):
         return OperationResponse(**result)
     else:
         raise HTTPException(status_code=400, detail=result.get("error"))
-
 
 @router.get("/backups")
 async def list_backups():

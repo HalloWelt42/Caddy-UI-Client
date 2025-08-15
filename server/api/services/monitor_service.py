@@ -1,6 +1,11 @@
 """
 Monitoring Service für System-Metriken
 """
+import sys
+from pathlib import Path
+# Projekt-Root zum Python-Path hinzufügen
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+
 import asyncio
 import psutil
 import time
@@ -9,7 +14,6 @@ from collections import deque
 from datetime import datetime
 
 from server.config.settings import settings
-
 
 class MonitorService:
     def __init__(self):
@@ -120,12 +124,17 @@ class MonitorService:
         except:
             return False
 
+    def set_caddy_service(self, service):
+        """Setzt die Caddy-Service Referenz (vermeidet zirkuläre Imports)"""
+        self._caddy_service = service
+
     async def _check_caddy_status(self) -> str:
         """Prüft Caddy-Status"""
         try:
-            from server.api.services.caddy_service import caddy_service
-            status = await caddy_service.get_status()
-            return status.get("status", "unknown")
+            if hasattr(self, '_caddy_service'):
+                status = await self._caddy_service.get_status()
+                return status.get("status", "unknown")
+            return "unknown"
         except:
             return "error"
 
@@ -212,7 +221,3 @@ class MonitorService:
                 "success": False,
                 "error": f"Docker-Fehler: {str(e)}"
             }
-
-
-# Singleton-Instanz
-monitor_service = MonitorService()

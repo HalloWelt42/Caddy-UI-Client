@@ -1,5 +1,5 @@
 """
-Monitoring Service für System-Metriken
+Caddy Service - Installation und Verwaltung
 """
 import sys
 from pathlib import Path
@@ -7,215 +7,516 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 import asyncio
-import psutil
-import time
-from typing import Dict, Any, List, Optional
-from collections import deque
-from datetime import datetime
+import httpx
+import json
+import platform
+import subprocess
+import tarfile
+import tempfile
+from pathlib import Path
+from typing import Dict, List, Optional, Any
+from enum import Enum
 
 from server.config.settings import settings
+from shared.utils.paths import CADDY_JSON_CONFIG, CADDY_BINARY, CERTS_DIR
 
-class MonitorService:
+class CaddyStatus(str, Enum):
+    RUNNING = "running"
+    STOPPED = "stopped"
+    NOT_INSTALLED = "not_installed"
+    ERROR = "error"
+
+class CaddyService:
     def __init__(self):
-        self.metrics_history = deque(maxlen=settings.metrics_history_size)
-        self.monitoring_task: Optional[asyncio.Task] = None
-        self.request_count = 0
-        self.last_request_time = time.time()
-        self.response_times = deque(maxlen=100)
+        self.process: Optional[subprocess.Popen] = None
+        self.client = httpx.AsyncClient(timeout=10.0)
 
-    async def start_monitoring(self):
-        """Startet den Monitoring-Task"""
-        if self.monitoring_task and not self.monitoring_task.done():
-            return
+    async def get_status(self) -> Dict[str, Any]:
+        """Caddy-Status abrufen"""
+        if not settings.is_caddy_installed:
+            return {
+                "status": CaddyStatus.NOT_INSTALLED,
+                "message": "Caddy ist nicht installiert"
+            }
 
-        self.monitoring_task = asyncio.create_task(self._monitor_loop())
+        try:
+            # Prüfe ob Caddy läuft via Admin API
+            response = await self.client.get(f"{settings.caddy_api_url}/config/")
+            if response.status_code == 200:
+                return {
+                    "status": CaddyStatus.RUNNING,
+                    "message": "Caddy läuft",
+                    "admin_api": True,
+                    "config": response.json() if response.content else {}
+                }
+        except (httpx.ConnectError, httpx.TimeoutException):
+            pass
 
-    async def stop_monitoring(self):
-        """Stoppt den Monitoring-Task"""
-        if self.monitoring_task:
-            self.monitoring_task.cancel()
-            try:
-                await self.monitoring_task
-            except asyncio.CancelledError:
-                pass
-
-    async def _monitor_loop(self):
-        """Hauptschleife für Monitoring"""
-        while True:
-            try:
-                metrics = await self.collect_metrics()
-                self.metrics_history.append(metrics)
-                await asyncio.sleep(settings.monitor_interval)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                print(f"Monitoring error: {e}")
-                await asyncio.sleep(settings.monitor_interval)
-
-    async def collect_metrics(self) -> Dict[str, Any]:
-        """Sammelt aktuelle System-Metriken"""
-        # CPU und Memory
-        cpu_percent = psutil.cpu_percent(interval=0.1)
-        memory = psutil.virtual_memory()
-
-        # Disk
-        disk = psutil.disk_usage('/')
-
-        # Network
-        net_io = psutil.net_io_counters()
-
-        # Docker Status prüfen
-        docker_running = await self._check_docker_status()
-
-        # Caddy Status prüfen
-        caddy_status = await self._check_caddy_status()
-
-        # Request-Metriken
-        current_time = time.time()
-        time_diff = current_time - self.last_request_time
-        requests_per_sec = self.request_count / time_diff if time_diff > 0 else 0
-
-        # Response Time
-        avg_response_time = sum(self.response_times) / len(self.response_times) if self.response_times else 0
+        # Prüfe ob Prozess läuft
+        if self.process and self.process.poll() is None:
+            return {
+                "status": CaddyStatus.RUNNING,
+                "message": "Caddy-Prozess läuft (Admin API nicht erreichbar)",
+                "admin_api": False
+            }
 
         return {
-            "timestamp": datetime.now().isoformat(),
-            "cpu": {
-                "percent": cpu_percent,
-                "cores": psutil.cpu_count()
-            },
-            "memory": {
-                "percent": memory.percent,
-                "used": memory.used,
-                "total": memory.total,
-                "available": memory.available
-            },
-            "disk": {
-                "percent": disk.percent,
-                "used": disk.used,
-                "total": disk.total,
-                "free": disk.free
-            },
-            "network": {
-                "bytes_sent": net_io.bytes_sent,
-                "bytes_recv": net_io.bytes_recv,
-                "packets_sent": net_io.packets_sent,
-                "packets_recv": net_io.packets_recv
-            },
-            "services": {
-                "docker": docker_running,
-                "caddy": caddy_status
-            },
-            "requests": {
-                "count": self.request_count,
-                "per_second": round(requests_per_sec, 2),
-                "avg_response_time": round(avg_response_time, 2)
-            }
+            "status": CaddyStatus.STOPPED,
+            "message": "Caddy ist gestoppt"
         }
 
-    async def _check_docker_status(self) -> bool:
-        """Prüft ob Docker läuft"""
-        try:
-            # Prüfe ob Docker-Prozess läuft
-            for proc in psutil.process_iter(['name']):
-                if 'docker' in proc.info['name'].lower():
-                    return True
-            return False
-        except:
-            return False
-
-    async def _check_caddy_status(self) -> str:
-        """Prüft Caddy-Status"""
-        try:
-            from server.api.services.caddy_service import caddy_service
-            status = await caddy_service.get_status()
-            return status.get("status", "unknown")
-        except:
-            return "error"
-
-    def record_request(self):
-        """Zählt einen Request"""
-        self.request_count += 1
-
-    def record_response_time(self, time_ms: float):
-        """Speichert Response-Zeit"""
-        self.response_times.append(time_ms)
-
-    async def get_current_metrics(self) -> Dict[str, Any]:
-        """Gibt aktuelle Metriken zurück"""
-        return await self.collect_metrics()
-
-    def get_metrics_history(self) -> List[Dict[str, Any]]:
-        """Gibt Metrik-Historie zurück"""
-        return list(self.metrics_history)
-
-    async def get_docker_containers(self) -> List[Dict[str, Any]]:
-        """Liste der Docker-Container"""
-        containers = []
-
-        if not settings.docker_enabled:
-            return containers
-
-        try:
-            import docker
-            client = docker.from_env()
-
-            for container in client.containers.list(all=True):
-                containers.append({
-                    "id": container.short_id,
-                    "name": container.name,
-                    "image": container.image.tags[0] if container.image.tags else container.image.id,
-                    "status": container.status,
-                    "created": container.attrs['Created'],
-                    "ports": container.ports
-                })
-
-            client.close()
-        except Exception as e:
-            print(f"Docker error: {e}")
-
-        return containers
-
-    async def control_docker_container(self, container_id: str, action: str) -> Dict[str, Any]:
-        """Steuert Docker-Container (start/stop/restart)"""
-        if not settings.docker_enabled:
+    async def install_caddy(self, progress_callback=None) -> Dict[str, Any]:
+        """Caddy für macOS ARM64 installieren"""
+        if platform.system() != "Darwin" or platform.machine() != "arm64":
             return {
                 "success": False,
-                "error": "Docker-Integration ist deaktiviert"
+                "error": "Installation nur für macOS ARM64 unterstützt"
             }
 
         try:
-            import docker
-            client = docker.from_env()
-            container = client.containers.get(container_id)
+            # Download-URL erstellen
+            url = settings.caddy_download_url_mac.format(version=settings.caddy_version)
 
-            if action == "start":
-                container.start()
-                message = f"Container {container.name} gestartet"
-            elif action == "stop":
-                container.stop()
-                message = f"Container {container.name} gestoppt"
-            elif action == "restart":
-                container.restart()
-                message = f"Container {container.name} neu gestartet"
-            else:
-                return {
-                    "success": False,
-                    "error": f"Unbekannte Aktion: {action}"
-                }
+            if progress_callback:
+                await progress_callback("Download startet...", 10)
 
-            client.close()
+            # Download Caddy
+            async with self.client.stream("GET", url) as response:
+                response.raise_for_status()
+                total_size = int(response.headers.get("content-length", 0))
+
+                with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp_file:
+                    downloaded = 0
+                    async for chunk in response.aiter_bytes(chunk_size=8192):
+                        tmp_file.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_callback and total_size:
+                            progress = 10 + int((downloaded / total_size) * 60)
+                            await progress_callback(f"Download: {downloaded}/{total_size} bytes", progress)
+
+                    tmp_path = Path(tmp_file.name)
+
+            if progress_callback:
+                await progress_callback("Entpacke Caddy...", 75)
+
+            # Entpacken
+            with tarfile.open(tmp_path, "r:gz") as tar:
+                # Finde Caddy-Binary im Archiv
+                for member in tar.getmembers():
+                    if member.name == "caddy" or member.name.endswith("/caddy"):
+                        # Extrahiere direkt zum Zielort
+                        CADDY_BINARY.parent.mkdir(parents=True, exist_ok=True)
+
+                        with tar.extractfile(member) as source:
+                            with open(CADDY_BINARY, "wb") as target:
+                                target.write(source.read())
+
+                        # Ausführbar machen
+                        CADDY_BINARY.chmod(0o755)
+                        break
+
+            # Temp-Datei löschen
+            tmp_path.unlink()
+
+            if progress_callback:
+                await progress_callback("Installation abgeschlossen", 90)
+
+            # Root-Zertifikat installieren
+            await self.install_root_certificate(progress_callback)
+
+            if progress_callback:
+                await progress_callback("Fertig!", 100)
 
             return {
                 "success": True,
-                "message": message
+                "message": f"Caddy {settings.caddy_version} erfolgreich installiert",
+                "path": str(CADDY_BINARY)
             }
 
         except Exception as e:
             return {
                 "success": False,
-                "error": f"Docker-Fehler: {str(e)}"
+                "error": f"Installationsfehler: {str(e)}"
             }
 
-# Singleton-Instanz
-monitor_service = MonitorService()
+    async def install_root_certificate(self, progress_callback=None) -> Dict[str, Any]:
+        """Root-Zertifikat für lokale HTTPS-Entwicklung installieren"""
+        try:
+            if progress_callback:
+                await progress_callback("Installiere Root-Zertifikat...", 95)
+
+            # Caddy trust für lokale CA
+            result = subprocess.run(
+                [str(CADDY_BINARY), "trust"],
+                capture_output=True,
+                text=True
+            )
+
+            if result.returncode == 0:
+                return {
+                    "success": True,
+                    "message": "Root-Zertifikat erfolgreich installiert"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"Zertifikat-Installation fehlgeschlagen: {result.stderr}"
+                }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Zertifikat-Fehler: {str(e)}"
+            }
+
+    async def start(self) -> Dict[str, Any]:
+        """Caddy starten"""
+        if not settings.is_caddy_installed:
+            return {
+                "success": False,
+                "error": "Caddy ist nicht installiert"
+            }
+
+        status = await self.get_status()
+        if status["status"] == CaddyStatus.RUNNING:
+            return {
+                "success": False,
+                "error": "Caddy läuft bereits"
+            }
+
+        try:
+            # Erstelle Standard-Config wenn nicht vorhanden
+            if not CADDY_JSON_CONFIG.exists():
+                await self.create_default_config()
+
+            # Starte Caddy mit JSON-Config
+            self.process = subprocess.Popen(
+                [
+                    str(CADDY_BINARY),
+                    "run",
+                    "--config", str(CADDY_JSON_CONFIG),
+                    "--adapter", "json"
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=str(settings.project_root)
+            )
+
+            # Warte kurz und prüfe Status
+            await asyncio.sleep(2)
+
+            if self.process.poll() is None:
+                return {
+                    "success": True,
+                    "message": "Caddy erfolgreich gestartet",
+                    "pid": self.process.pid
+                }
+            else:
+                stderr = self.process.stderr.read().decode() if self.process.stderr else ""
+                return {
+                    "success": False,
+                    "error": f"Caddy konnte nicht gestartet werden: {stderr}"
+                }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Startfehler: {str(e)}"
+            }
+
+    async def stop(self) -> Dict[str, Any]:
+        """Caddy stoppen"""
+        try:
+            # Versuche über Admin API
+            try:
+                response = await self.client.post(f"{settings.caddy_api_url}/stop")
+                if response.status_code == 200:
+                    self.process = None
+                    return {
+                        "success": True,
+                        "message": "Caddy über Admin API gestoppt"
+                    }
+            except:
+                pass
+
+            # Fallback: Prozess beenden
+            if self.process:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+
+                self.process = None
+                return {
+                    "success": True,
+                    "message": "Caddy-Prozess beendet"
+                }
+
+            return {
+                "success": False,
+                "error": "Kein laufender Caddy-Prozess gefunden"
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Stoppfehler: {str(e)}"
+            }
+
+    async def restart(self) -> Dict[str, Any]:
+        """Caddy neu starten"""
+        stop_result = await self.stop()
+        if not stop_result.get("success"):
+            # Wenn Stop fehlschlägt, trotzdem versuchen zu starten
+            pass
+
+        await asyncio.sleep(1)
+        return await self.start()
+
+    async def create_default_config(self) -> None:
+        """Erstellt eine Standard-Caddy-Konfiguration"""
+        config = {
+            "admin": {
+                "listen": f"{settings.caddy_admin_host}:{settings.caddy_admin_port}"
+            },
+            "apps": {
+                "http": {
+                    "servers": {
+                        "srv0": {
+                            "listen": [":443"],
+                            "routes": []
+                        }
+                    }
+                }
+            }
+        }
+
+        CADDY_JSON_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        with open(CADDY_JSON_CONFIG, "w") as f:
+            json.dump(config, f, indent=2)
+
+    async def add_route(self, domain: str, upstream: str, path: str = "/") -> Dict[str, Any]:
+        """Fügt eine neue Route hinzu"""
+        try:
+            # Aktuelle Config laden
+            response = await self.client.get(f"{settings.caddy_api_url}/config/")
+            if response.status_code != 200:
+                return {
+                    "success": False,
+                    "error": "Konnte aktuelle Konfiguration nicht laden"
+                }
+
+            config = response.json()
+
+            # Neue Route erstellen
+            new_route = {
+                "match": [{"host": [domain]}],
+                "handle": [
+                    {
+                        "handler": "reverse_proxy",
+                        "upstreams": [{"dial": upstream}]
+                    }
+                ]
+            }
+
+            if path != "/":
+                new_route["match"][0]["path"] = [path]
+
+            # Route zur Config hinzufügen
+            if "apps" not in config:
+                config["apps"] = {}
+            if "http" not in config["apps"]:
+                config["apps"]["http"] = {"servers": {}}
+            if "srv0" not in config["apps"]["http"]["servers"]:
+                config["apps"]["http"]["servers"]["srv0"] = {"listen": [":443"], "routes": []}
+
+            config["apps"]["http"]["servers"]["srv0"]["routes"].append(new_route)
+
+            # Config updaten
+            response = await self.client.put(
+                f"{settings.caddy_api_url}/config/",
+                json=config
+            )
+
+            if response.status_code == 200:
+                # Config auch lokal speichern
+                with open(CADDY_JSON_CONFIG, "w") as f:
+                    json.dump(config, f, indent=2)
+
+                return {
+                    "success": True,
+                    "message": f"Route {domain} -> {upstream} hinzugefügt"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"Fehler beim Update: {response.text}"
+                }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Fehler beim Hinzufügen der Route: {str(e)}"
+            }
+
+    async def remove_route(self, domain: str) -> Dict[str, Any]:
+        """Entfernt eine Route"""
+        try:
+            response = await self.client.get(f"{settings.caddy_api_url}/config/")
+            if response.status_code != 200:
+                return {
+                    "success": False,
+                    "error": "Konnte aktuelle Konfiguration nicht laden"
+                }
+
+            config = response.json()
+
+            # Route finden und entfernen
+            routes = config.get("apps", {}).get("http", {}).get("servers", {}).get("srv0", {}).get("routes", [])
+            original_count = len(routes)
+
+            routes = [
+                r for r in routes
+                if not (r.get("match", [{}])[0].get("host", [None])[0] == domain)
+            ]
+
+            if len(routes) == original_count:
+                return {
+                    "success": False,
+                    "error": f"Route für {domain} nicht gefunden"
+                }
+
+            config["apps"]["http"]["servers"]["srv0"]["routes"] = routes
+
+            # Config updaten
+            response = await self.client.put(
+                f"{settings.caddy_api_url}/config/",
+                json=config
+            )
+
+            if response.status_code == 200:
+                with open(CADDY_JSON_CONFIG, "w") as f:
+                    json.dump(config, f, indent=2)
+
+                return {
+                    "success": True,
+                    "message": f"Route für {domain} entfernt"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"Fehler beim Update: {response.text}"
+                }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Fehler beim Entfernen der Route: {str(e)}"
+            }
+
+    async def get_routes(self) -> List[Dict[str, Any]]:
+        """Listet alle konfigurierten Routes auf"""
+        try:
+            response = await self.client.get(f"{settings.caddy_api_url}/config/")
+            if response.status_code != 200:
+                return []
+
+            config = response.json()
+            routes = config.get("apps", {}).get("http", {}).get("servers", {}).get("srv0", {}).get("routes", [])
+
+            result = []
+            for route in routes:
+                match = route.get("match", [{}])[0]
+                handle = route.get("handle", [{}])[0]
+
+                if handle.get("handler") == "reverse_proxy":
+                    upstream = handle.get("upstreams", [{}])[0].get("dial", "")
+                    result.append({
+                        "domain": match.get("host", [""])[0],
+                        "path": match.get("path", ["/"])[0] if "path" in match else "/",
+                        "upstream": upstream
+                    })
+
+            return result
+
+        except Exception:
+            return []
+
+    async def backup_config(self, name: Optional[str] = None) -> Dict[str, Any]:
+        """Sichert die aktuelle Konfiguration"""
+        try:
+            from datetime import datetime
+
+            if not name:
+                name = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            backup_file = settings.backups_dir / f"caddy_config_{name}.json"
+
+            # Aktuelle Config laden
+            if CADDY_JSON_CONFIG.exists():
+                with open(CADDY_JSON_CONFIG, "r") as f:
+                    config = json.load(f)
+
+                with open(backup_file, "w") as f:
+                    json.dump(config, f, indent=2)
+
+                return {
+                    "success": True,
+                    "message": f"Backup erstellt: {backup_file.name}",
+                    "path": str(backup_file)
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Keine Konfiguration zum Sichern vorhanden"
+                }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Backup-Fehler: {str(e)}"
+            }
+
+    async def restore_config(self, backup_name: str) -> Dict[str, Any]:
+        """Stellt eine gesicherte Konfiguration wieder her"""
+        try:
+            backup_file = settings.backups_dir / backup_name
+
+            if not backup_file.exists():
+                return {
+                    "success": False,
+                    "error": f"Backup-Datei nicht gefunden: {backup_name}"
+                }
+
+            with open(backup_file, "r") as f:
+                config = json.load(f)
+
+            # Config lokal speichern
+            with open(CADDY_JSON_CONFIG, "w") as f:
+                json.dump(config, f, indent=2)
+
+            # Wenn Caddy läuft, Config neu laden
+            status = await self.get_status()
+            if status["status"] == CaddyStatus.RUNNING:
+                response = await self.client.put(
+                    f"{settings.caddy_api_url}/config/",
+                    json=config
+                )
+
+                if response.status_code != 200:
+                    return {
+                        "success": False,
+                        "error": f"Fehler beim Laden der Config: {response.text}"
+                    }
+
+            return {
+                "success": True,
+                "message": f"Konfiguration wiederhergestellt von: {backup_name}"
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Restore-Fehler: {str(e)}"
+            }
