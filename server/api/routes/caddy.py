@@ -22,6 +22,7 @@ async def get_status():
 @router.post("/install")
 async def install_caddy():
     """Caddy installieren"""
+    # Einfache Installation ohne Progress-Tracking
     result = await caddy_service.install_caddy()
     if result["success"]:
         return OperationResponse(**result)
