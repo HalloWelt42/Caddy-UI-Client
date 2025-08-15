@@ -1,6 +1,34 @@
-"""
+async def load_docker_containers(self):
+    """Docker Container laden"""
+    containers = await self.api_client.get_docker_containers()
+    self.docker_manager.update_containers(containers)
+
+
+async def start_docker_container(self, container_id: str):
+    """Docker Container starten"""
+    await self.api_client.control_docker_container(container_id, "start")
+    await self.load_docker_containers()
+
+
+async def stop_docker_container(self, container_id: str):
+    """Docker Container stoppen"""
+    await self.api_client.control_docker_container(container_id, "stop")
+    await self.load_docker_containers()
+
+
+async def restart_docker_container(self, container_id: str):
+    """Docker Container neu starten"""
+    await self.api_client.control_docker_container(container_id, "restart")
+    await self.load_docker_containers()  # Docker Manager Signals
+    self.docker_manager.refresh_containers.connect(self.load_docker_containers)
+    self.docker_manager.start_container.connect(self.start_docker_container)
+    self.docker_manager.stop_container.connect(self.stop_docker_container)
+    self.docker_manager.restart_container.connect(self.restart_docker_container)
+    """
 Hauptfenster der Caddy Manager Anwendung
 """
+
+
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QTabWidget,
     QStatusBar, QMessageBox, QProgressDialog
@@ -13,6 +41,7 @@ from qasync import asyncSlot
 
 from client.ui.widgets.dashboard import DashboardWidget
 from client.ui.widgets.route_manager import RouteManagerWidget
+from client.ui.widgets.docker_manager import DockerManagerWidget
 from client.services.api_client import APIClient
 
 
@@ -53,7 +82,6 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.route_manager, qta.icon('fa5s.route'), "Routes")
 
         # Docker Tab
-        from client.ui.widgets.docker_manager import DockerManagerWidget
         self.docker_manager = DockerManagerWidget()
         self.tabs.addTab(self.docker_manager, qta.icon('fa5b.docker'), "Docker")
 
@@ -120,8 +148,14 @@ class MainWindow(QMainWindow):
 
         # Route Manager Signals
         self.route_manager.add_route.connect(self.add_route)
-        self.route_manager.remove_route.connect(self.remove_route)
+        self.route_manager.remove_route.connect(self.remove_route_wrapper)  # Wrapper verwenden
         self.route_manager.refresh_routes.connect(self.load_routes)
+
+        # Docker Manager Signals
+        self.docker_manager.refresh_containers.connect(self.load_docker_containers_wrapper)  # Wrapper
+        self.docker_manager.start_container.connect(self.start_docker_container_wrapper)  # Wrapper
+        self.docker_manager.stop_container.connect(self.stop_docker_container_wrapper)  # Wrapper
+        self.docker_manager.restart_container.connect(self.restart_docker_container_wrapper)  # Wrapper
 
     def setup_timers(self):
         """Timer für regelmäßige Updates einrichten"""
@@ -177,6 +211,7 @@ class MainWindow(QMainWindow):
             await self.update_status()
             await self.load_routes()
             await self.update_metrics()
+            await self.load_docker_containers()  # Docker Container laden
         else:
             self.status_bar.showMessage("Server nicht erreichbar")
             self.show_error("Konnte keine Verbindung zum Server herstellen")
@@ -282,11 +317,52 @@ class MainWindow(QMainWindow):
             route_data["path"]
         )
 
-    @asyncSlot()
+    # ============= Docker Management (ohne asyncSlot) =============
+
+    def remove_route_wrapper(self, domain: str):
+        """Wrapper für async remove_route"""
+        asyncio.create_task(self.remove_route(domain))
+
     async def remove_route(self, domain: str):
         """Route entfernen"""
         self.status_bar.showMessage(f"Entferne Route {domain}...")
         await self.api_client.remove_route(domain)
+
+    def load_docker_containers_wrapper(self):
+        """Wrapper für async load_docker_containers"""
+        asyncio.create_task(self.load_docker_containers())
+
+    async def load_docker_containers(self):
+        """Docker Container laden"""
+        containers = await self.api_client.get_docker_containers()
+        self.docker_manager.update_containers(containers)
+
+    def start_docker_container_wrapper(self, container_id: str):
+        """Wrapper für async start_docker_container"""
+        asyncio.create_task(self.start_docker_container(container_id))
+
+    async def start_docker_container(self, container_id: str):
+        """Docker Container starten"""
+        await self.api_client.control_docker_container(container_id, "start")
+        await self.load_docker_containers()
+
+    def stop_docker_container_wrapper(self, container_id: str):
+        """Wrapper für async stop_docker_container"""
+        asyncio.create_task(self.stop_docker_container(container_id))
+
+    async def stop_docker_container(self, container_id: str):
+        """Docker Container stoppen"""
+        await self.api_client.control_docker_container(container_id, "stop")
+        await self.load_docker_containers()
+
+    def restart_docker_container_wrapper(self, container_id: str):
+        """Wrapper für async restart_docker_container"""
+        asyncio.create_task(self.restart_docker_container(container_id))
+
+    async def restart_docker_container(self, container_id: str):
+        """Docker Container neu starten"""
+        await self.api_client.control_docker_container(container_id, "restart")
+        await self.load_docker_containers()
 
     @asyncSlot()
     async def create_backup(self):
