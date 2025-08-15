@@ -15,7 +15,6 @@ from client.ui.widgets.dashboard import DashboardWidget
 from client.ui.widgets.route_manager import RouteManagerWidget
 from client.services.api_client import APIClient
 
-
 class MainWindow(QMainWindow):
     """Hauptfenster der Anwendung"""
 
@@ -164,21 +163,25 @@ class MainWindow(QMainWindow):
     @asyncSlot()
     async def install_caddy(self):
         """Caddy installieren"""
-        progress = QProgressDialog("Caddy wird installiert...", "Abbrechen", 0, 100, self)
+        progress = QProgressDialog("Caddy wird installiert...", None, 0, 0, self)
         progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setWindowTitle("Installation")
         progress.show()
 
-        def update_progress(data):
-            progress.setValue(data.get("progress", 0))
-            progress.setLabelText(data.get("message", ""))
-
-        self.api_client.install_progress.connect(update_progress)
-
         try:
-            await self.api_client.install_caddy_with_progress()
-        finally:
-            self.api_client.install_progress.disconnect(update_progress)
+            # Verwende normale HTTP-Installation statt WebSocket
+            result = await self.api_client.install_caddy()
             progress.close()
+
+            if result.get("success"):
+                QMessageBox.information(self, "Erfolg", result.get("message", "Caddy erfolgreich installiert"))
+            else:
+                QMessageBox.critical(self, "Fehler", result.get("error", "Installation fehlgeschlagen"))
+
+        except Exception as e:
+            progress.close()
+            QMessageBox.critical(self, "Fehler", f"Installationsfehler: {str(e)}")
+        finally:
             await self.update_status()
 
     @asyncSlot()
