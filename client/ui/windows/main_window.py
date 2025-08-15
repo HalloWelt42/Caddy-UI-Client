@@ -163,6 +163,10 @@ class MainWindow(QMainWindow):
     @asyncSlot()
     async def install_caddy(self):
         """Caddy installieren"""
+        # Timer temporär stoppen um Konflikte zu vermeiden
+        self.status_timer.stop()
+        self.metrics_timer.stop()
+
         progress = QProgressDialog("Caddy wird installiert...", None, 0, 0, self)
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setWindowTitle("Installation")
@@ -183,6 +187,9 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Fehler", f"Installationsfehler: {str(e)}")
         finally:
             await self.update_status()
+            # Timer wieder starten
+            self.status_timer.start(5000)
+            self.metrics_timer.start(2000)
 
     @asyncSlot()
     async def start_caddy(self):
