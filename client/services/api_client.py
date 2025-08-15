@@ -7,7 +7,6 @@ from typing import Dict, Any, List, Optional
 from PySide6.QtCore import QObject, Signal
 import json
 
-
 class APIClient(QObject):
     """Async API Client mit Qt Signals"""
 
@@ -49,11 +48,21 @@ class APIClient(QObject):
     async def install_caddy(self) -> Dict[str, Any]:
         """Caddy installieren"""
         try:
-            response = await self.client.post(f"{self.base_url}/api/caddy/install")
-            response.raise_for_status()
-            data = response.json()
-            self.operation_completed.emit(data)
-            return data
+            response = await self.client.post(f"{self.base_url}/api/caddy/install", timeout=60.0)
+            if response.status_code == 200:
+                data = response.json()
+                self.operation_completed.emit(data)
+                return data
+            else:
+                # Versuche Error-Details zu extrahieren
+                try:
+                    error_detail = response.json().get("detail", response.text)
+                except:
+                    error_detail = response.text
+
+                error_msg = f"Installation fehlgeschlagen: {error_detail}"
+                self.error_occurred.emit(error_msg)
+                return {"success": False, "error": error_msg}
         except Exception as e:
             self.error_occurred.emit(f"Installations-Fehler: {str(e)}")
             return {"success": False, "error": str(e)}

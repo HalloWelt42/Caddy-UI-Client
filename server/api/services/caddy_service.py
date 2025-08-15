@@ -3,6 +3,7 @@ Caddy Service - Installation und Verwaltung
 """
 import sys
 from pathlib import Path
+
 # Projekt-Root zum Python-Path hinzufügen
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
@@ -20,11 +21,13 @@ from enum import Enum
 from server.config.settings import settings
 from shared.utils.paths import CADDY_JSON_CONFIG, CADDY_BINARY, CERTS_DIR
 
+
 class CaddyStatus(str, Enum):
     RUNNING = "running"
     STOPPED = "stopped"
     NOT_INSTALLED = "not_installed"
     ERROR = "error"
+
 
 class CaddyService:
     def __init__(self):
@@ -67,15 +70,28 @@ class CaddyService:
 
     async def install_caddy(self, progress_callback=None) -> Dict[str, Any]:
         """Caddy für macOS ARM64 installieren"""
-        if platform.system() != "Darwin" or platform.machine() != "arm64":
-            return {
-                "success": False,
-                "error": "Installation nur für macOS ARM64 unterstützt"
-            }
-
         try:
+            # Platform Check
+            system = platform.system()
+            machine = platform.machine()
+
+            print(f"🖥️  System: {system}, Machine: {machine}")
+
+            if system != "Darwin":
+                return {
+                    "success": False,
+                    "error": f"Installation nur für macOS unterstützt (aktuell: {system})"
+                }
+
+            if machine != "arm64":
+                return {
+                    "success": False,
+                    "error": f"Installation nur für ARM64 unterstützt (aktuell: {machine})"
+                }
+
             # Download-URL erstellen
             url = settings.caddy_download_url_mac.format(version=settings.caddy_version)
+            print(f"📥 Download URL: {url}")
 
             if progress_callback:
                 await progress_callback("Download startet...", 10)
@@ -134,6 +150,7 @@ class CaddyService:
             }
 
         except Exception as e:
+            print(f"❌ Installationsfehler: {str(e)}")
             return {
                 "success": False,
                 "error": f"Installationsfehler: {str(e)}"
