@@ -94,11 +94,21 @@ class APIClient(QObject):
         """Caddy starten"""
         try:
             response = await self.client.post(f"{self.base_url}/api/caddy/start")
-            response.raise_for_status()
-            data = response.json()
-            self.operation_completed.emit(data)
-            await self.get_caddy_status()  # Status aktualisieren
-            return data
+            if response.status_code == 200:
+                data = response.json()
+                self.operation_completed.emit(data)
+                await self.get_caddy_status()  # Status aktualisieren
+                return data
+            else:
+                # Versuche Error-Details zu extrahieren
+                try:
+                    error_detail = response.json().get("detail", response.text)
+                except:
+                    error_detail = response.text
+
+                error_msg = f"Start fehlgeschlagen: {error_detail}"
+                self.error_occurred.emit(error_msg)
+                return {"success": False, "error": error_msg}
         except Exception as e:
             self.error_occurred.emit(f"Start-Fehler: {str(e)}")
             return {"success": False, "error": str(e)}

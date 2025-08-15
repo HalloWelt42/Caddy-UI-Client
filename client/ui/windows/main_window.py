@@ -194,20 +194,47 @@ class MainWindow(QMainWindow):
     @asyncSlot()
     async def start_caddy(self):
         """Caddy starten"""
+        # Timer temporär stoppen
+        self.status_timer.stop()
+        self.metrics_timer.stop()
+
         self.status_bar.showMessage("Starte Caddy...")
-        await self.api_client.start_caddy()
+        try:
+            await self.api_client.start_caddy()
+        finally:
+            # Timer wieder starten
+            self.status_timer.start(5000)
+            self.metrics_timer.start(2000)
 
     @asyncSlot()
     async def stop_caddy(self):
         """Caddy stoppen"""
+        # Timer temporär stoppen
+        self.status_timer.stop()
+        self.metrics_timer.stop()
+
         self.status_bar.showMessage("Stoppe Caddy...")
-        await self.api_client.stop_caddy()
+        try:
+            await self.api_client.stop_caddy()
+        finally:
+            # Timer wieder starten
+            self.status_timer.start(5000)
+            self.metrics_timer.start(2000)
 
     @asyncSlot()
     async def restart_caddy(self):
         """Caddy neu starten"""
+        # Timer temporär stoppen
+        self.status_timer.stop()
+        self.metrics_timer.stop()
+
         self.status_bar.showMessage("Starte Caddy neu...")
-        await self.api_client.restart_caddy()
+        try:
+            await self.api_client.restart_caddy()
+        finally:
+            # Timer wieder starten
+            self.status_timer.start(5000)
+            self.metrics_timer.start(2000)
 
     @asyncSlot()
     async def add_route(self, route_data: dict):
