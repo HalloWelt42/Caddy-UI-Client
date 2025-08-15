@@ -116,12 +116,35 @@ class MonitorService:
     async def _check_docker_status(self) -> bool:
         """Prüft ob Docker läuft"""
         try:
-            # Prüfe ob Docker-Prozess läuft
-            for proc in psutil.process_iter(['name']):
-                if 'docker' in proc.info['name'].lower():
-                    return True
+            # Methode 1: Prüfe Docker Desktop Prozess (macOS)
+            for proc in psutil.process_iter(['name', 'cmdline']):
+                try:
+                    # Docker Desktop auf macOS
+                    if 'Docker Desktop' in proc.info['name']:
+                        return True
+                    # Docker Backend Service
+                    if 'com.docker.backend' in proc.info['name']:
+                        return True
+                    # Prüfe cmdline für Docker Desktop
+                    cmdline = proc.info.get('cmdline', [])
+                    if cmdline and any('Docker' in str(arg) and 'Desktop' in str(arg) for arg in cmdline):
+                        return True
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+            # Methode 2: Versuche Docker API zu erreichen
+            try:
+                import docker
+                client = docker.from_env()
+                client.ping()
+                client.close()
+                return True
+            except:
+                pass
+
             return False
-        except:
+        except Exception as e:
+            print(f"Docker Status Check Error: {e}")
             return False
 
     def set_caddy_service(self, service):
@@ -158,40 +181,86 @@ class MonitorService:
         """Liste der Docker-Container"""
         containers = []
 
-        if not settings.docker_enabled:
-            return containers
-
         try:
             import docker
-            client = docker.from_env()
+
+            # Verwende Docker Desktop Socket für macOS
+            socket_paths = [
+                "unix:///Users/alpha/.docker/run/docker.sock",  # Docker Desktop
+                "unix:///var/run/docker.sock",  # Standard
+            ]
+
+            client = None
+            for socket_path in socket_paths:
+                try:
+                    # Versuche verschiedene Socket-Pfade
+                    if "alpha" in socket_path:
+                        # Ersetze alpha mit dem aktuellen User
+                        import os
+                        socket_path = socket_path.replace("alpha", os.environ.get("USER", "alpha"))
+
+                    client = docker.DockerClient(base_url=socket_path)
+                    client.ping()  # Test ob Verbindung funktioniert
+                    break
+                except:
+                    continue
+
+            if not client:
+                # Fallback: from_env()
+                client = docker.from_env()
 
             for container in client.containers.list(all=True):
+                # Ports formatieren
+                ports_dict = {}
+                if container.attrs.get('NetworkSettings', {}).get('Ports'):
+                    for internal, external in container.attrs['NetworkSettings']['Ports'].items():
+                        if external:
+                            ports_dict[internal] = f"{external[0]['HostPort']}"
+
                 containers.append({
                     "id": container.short_id,
                     "name": container.name,
-                    "image": container.image.tags[0] if container.image.tags else container.image.id,
+                    "image": container.image.tags[0] if container.image.tags else container.image.short_id,
                     "status": container.status,
                     "created": container.attrs['Created'],
-                    "ports": container.ports
+                    "ports": ports_dict
                 })
 
             client.close()
+
+        except ImportError:
+            print("Docker Python-Bibliothek nicht installiert")
         except Exception as e:
-            print(f"Docker error: {e}")
+            print(f"Docker Container Error: {e}")
+            import traceback
+            traceback.print_exc()
 
         return containers
 
     async def control_docker_container(self, container_id: str, action: str) -> Dict[str, Any]:
         """Steuert Docker-Container (start/stop/restart)"""
-        if not settings.docker_enabled:
-            return {
-                "success": False,
-                "error": "Docker-Integration ist deaktiviert"
-            }
-
         try:
             import docker
-            client = docker.from_env()
+            import os
+
+            # Socket-Pfad für Docker Desktop
+            socket_paths = [
+                f"unix:///Users/{os.environ.get('USER', 'alpha')}/.docker/run/docker.sock",
+                "unix:///var/run/docker.sock",
+            ]
+
+            client = None
+            for socket_path in socket_paths:
+                try:
+                    client = docker.DockerClient(base_url=socket_path)
+                    client.ping()
+                    break
+                except:
+                    continue
+
+            if not client:
+                client = docker.from_env()
+
             container = client.containers.get(container_id)
 
             if action == "start":
