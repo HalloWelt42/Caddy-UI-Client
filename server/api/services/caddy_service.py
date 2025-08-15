@@ -3,7 +3,6 @@ Caddy Service - Installation und Verwaltung
 """
 import sys
 from pathlib import Path
-
 # Projekt-Root zum Python-Path hinzufügen
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
@@ -21,18 +20,19 @@ from enum import Enum
 from server.config.settings import settings
 from shared.utils.paths import CADDY_JSON_CONFIG, CADDY_BINARY, CERTS_DIR
 
-
 class CaddyStatus(str, Enum):
     RUNNING = "running"
     STOPPED = "stopped"
     NOT_INSTALLED = "not_installed"
     ERROR = "error"
 
-
 class CaddyService:
     def __init__(self):
         self.process: Optional[subprocess.Popen] = None
-        self.client = httpx.AsyncClient(timeout=10.0)
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0, connect=10.0, read=30.0),
+            follow_redirects=True
+        )
 
     async def get_status(self) -> Dict[str, Any]:
         """Caddy-Status abrufen"""
@@ -97,7 +97,7 @@ class CaddyService:
                 await progress_callback("Download startet...", 10)
 
             # Download Caddy
-            async with self.client.stream("GET", url) as response:
+            async with self.client.stream("GET", url, follow_redirects=True) as response:
                 response.raise_for_status()
                 total_size = int(response.headers.get("content-length", 0))
 
