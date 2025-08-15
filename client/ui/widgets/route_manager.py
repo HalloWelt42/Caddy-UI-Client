@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFormLayout
 )
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QDesktopServices, QCursor
 import qtawesome as qta
 
 
@@ -122,6 +123,11 @@ class RouteManagerWidget(QWidget):
         # Alternating row colors
         self.table.setAlternatingRowColors(True)
 
+        # Klick-Event für Domain-Links
+        self.table.itemClicked.connect(self.on_item_clicked)
+        self.table.itemEntered.connect(self.on_item_entered)
+        self.table.setMouseTracking(True)  # Für Hover-Effekt
+
         layout.addWidget(self.table)
 
         # Status-Zeile
@@ -150,9 +156,27 @@ class RouteManagerWidget(QWidget):
             row = self.table.rowCount()
             self.table.insertRow(row)
 
-            # Domain
-            domain_item = QTableWidgetItem(route.get("domain", ""))
+            # Domain als klickbarer Link
+            domain = route.get("domain", "")
+            domain_item = QTableWidgetItem(domain)
             domain_item.setFlags(domain_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+
+            # Link-Styling (blau und unterstrichen)
+            domain_item.setForeground(Qt.GlobalColor.blue)
+            font = domain_item.font()
+            font.setUnderline(True)
+            domain_item.setFont(font)
+
+            # Speichere die URL als Daten
+            if domain:
+                # Füge https:// hinzu wenn kein Protokoll vorhanden
+                if not domain.startswith(('http://', 'https://')):
+                    url = f"https://{domain}"
+                else:
+                    url = domain
+                domain_item.setData(Qt.ItemDataRole.UserRole, url)
+                domain_item.setToolTip(f"Klicken um {url} zu öffnen")
+
             self.table.setItem(row, 0, domain_item)
 
             # Upstream
@@ -170,6 +194,23 @@ class RouteManagerWidget(QWidget):
             delete_btn.setMaximumWidth(80)
             delete_btn.clicked.connect(lambda checked, d=route.get("domain"): self.confirm_delete(d))
             self.table.setCellWidget(row, 3, delete_btn)
+
+    def on_item_entered(self, item: QTableWidgetItem):
+        """Handle Hover über Tabellen-Items"""
+        if item.column() == 0 and item.data(Qt.ItemDataRole.UserRole):
+            self.table.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        else:
+            self.table.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+
+    def on_item_clicked(self, item: QTableWidgetItem):
+        """Handle Klick auf Tabellen-Items"""
+        # Nur für Domain-Spalte (Spalte 0)
+        if item.column() == 0:
+            url = item.data(Qt.ItemDataRole.UserRole)
+            if url:
+                # Öffne URL im Browser
+                from PySide6.QtCore import QUrl
+                QDesktopServices.openUrl(QUrl(url))
 
     def confirm_delete(self, domain: str):
         """Löschbestätigung anzeigen"""
