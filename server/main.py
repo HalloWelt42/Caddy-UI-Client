@@ -1,6 +1,11 @@
 """
 FastAPI Server - Hauptdatei
 """
+import sys
+from pathlib import Path
+# Projekt-Root zum Python-Path hinzufügen
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -11,7 +16,6 @@ from contextlib import asynccontextmanager
 from server.config.settings import settings
 from server.api.routes import caddy, monitoring
 from server.api.services.monitor_service import monitor_service
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,7 +34,6 @@ async def lifespan(app: FastAPI):
     await monitor_service.stop_monitoring()
     print("👋 Server wird heruntergefahren")
 
-
 # FastAPI App erstellen
 app = FastAPI(
     title="Caddy Manager API",
@@ -47,7 +50,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # Request-Tracking Middleware
 @app.middleware("http")
@@ -70,11 +72,9 @@ async def track_requests(request: Request, call_next):
 
     return response
 
-
 # Routen einbinden
 app.include_router(caddy.router)
 app.include_router(monitoring.router)
-
 
 # Root-Endpoint
 @app.get("/")
@@ -92,7 +92,6 @@ async def root():
         }
     }
 
-
 # Health-Check
 @app.get("/health")
 async def health_check():
@@ -109,7 +108,6 @@ async def health_check():
         }
     }
 
-
 # Error Handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -123,7 +121,6 @@ async def global_exception_handler(request: Request, exc: Exception):
         }
     )
 
-
 def run_server():
     """Server starten"""
     uvicorn.run(
@@ -133,7 +130,6 @@ def run_server():
         reload=settings.reload,
         log_level="info"
     )
-
 
 if __name__ == "__main__":
     run_server()
