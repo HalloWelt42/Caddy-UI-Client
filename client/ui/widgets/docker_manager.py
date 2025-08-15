@@ -49,6 +49,9 @@ class DockerManagerWidget(QWidget):
             "Name", "Image", "Status", "Ports", "ID", "Aktionen"
         ])
 
+        # Zeilenhöhe vergrößern für bessere Button-Sichtbarkeit
+        self.table.verticalHeader().setDefaultSectionSize(60)  # 3x größer (default ~20)
+
         # Header anpassen
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -57,7 +60,7 @@ class DockerManagerWidget(QWidget):
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(5, 200)
+        self.table.setColumnWidth(5, 250)  # Mehr Platz für Buttons
 
         # ID-Spalte verstecken (nur für interne Verwendung)
         self.table.setColumnHidden(4, True)
