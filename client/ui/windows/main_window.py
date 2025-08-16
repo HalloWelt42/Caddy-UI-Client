@@ -1,43 +1,14 @@
-async def load_docker_containers(self):
-    """Docker Container laden"""
-    containers = await self.api_client.get_docker_containers()
-    self.docker_manager.update_containers(containers)
-
-
-async def start_docker_container(self, container_id: str):
-    """Docker Container starten"""
-    await self.api_client.control_docker_container(container_id, "start")
-    await self.load_docker_containers()
-
-
-async def stop_docker_container(self, container_id: str):
-    """Docker Container stoppen"""
-    await self.api_client.control_docker_container(container_id, "stop")
-    await self.load_docker_containers()
-
-
-async def restart_docker_container(self, container_id: str):
-    """Docker Container neu starten"""
-    await self.api_client.control_docker_container(container_id, "restart")
-    await self.load_docker_containers()  # Docker Manager Signals
-    self.docker_manager.refresh_containers.connect(self.load_docker_containers)
-    self.docker_manager.start_container.connect(self.start_docker_container)
-    self.docker_manager.stop_container.connect(self.stop_docker_container)
-    self.docker_manager.restart_container.connect(self.restart_docker_container)
-    """
+"""
 Hauptfenster der Caddy Manager Anwendung
 """
-
-
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QTabWidget,
-    QStatusBar, QMessageBox, QProgressDialog
+    QStatusBar, QMessageBox, QProgressDialog, QInputDialog
 )
 from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QAction
 import qtawesome as qta
 import asyncio
-from qasync import asyncSlot
 
 from client.ui.widgets.dashboard import DashboardWidget
 from client.ui.widgets.route_manager import RouteManagerWidget
@@ -56,7 +27,7 @@ class MainWindow(QMainWindow):
         self.setup_timers()
 
         # Initial Status abrufen
-        QTimer.singleShot(500, self.initial_load)
+        QTimer.singleShot(500, self.initial_load_wrapper)
 
     def setup_ui(self):
         """UI aufbauen"""
@@ -103,11 +74,11 @@ class MainWindow(QMainWindow):
         file_menu = menubar.addMenu("Datei")
 
         backup_action = QAction(qta.icon('fa5s.save'), "Backup erstellen", self)
-        backup_action.triggered.connect(self.create_backup)
+        backup_action.triggered.connect(self.create_backup_wrapper)
         file_menu.addAction(backup_action)
 
         restore_action = QAction(qta.icon('fa5s.upload'), "Backup wiederherstellen", self)
-        restore_action.triggered.connect(self.restore_backup)
+        restore_action.triggered.connect(self.restore_backup_wrapper)
         file_menu.addAction(restore_action)
 
         file_menu.addSeparator()
@@ -121,7 +92,7 @@ class MainWindow(QMainWindow):
 
         refresh_action = QAction(qta.icon('fa5s.sync'), "Aktualisieren", self)
         refresh_action.setShortcut("F5")
-        refresh_action.triggered.connect(self.refresh_all)
+        refresh_action.triggered.connect(self.refresh_all_wrapper)
         view_menu.addAction(refresh_action)
 
         # Hilfe Menu
@@ -140,34 +111,34 @@ class MainWindow(QMainWindow):
         self.api_client.error_occurred.connect(self.show_error)
         self.api_client.operation_completed.connect(self.show_operation_result)
 
-        # Dashboard Signals
-        self.dashboard.install_caddy.connect(self.install_caddy)
-        self.dashboard.start_caddy.connect(self.start_caddy)
-        self.dashboard.stop_caddy.connect(self.stop_caddy)
-        self.dashboard.restart_caddy.connect(self.restart_caddy)
+        # Dashboard Signals - mit Wrapper
+        self.dashboard.install_caddy.connect(self.install_caddy_wrapper)
+        self.dashboard.start_caddy.connect(self.start_caddy_wrapper)
+        self.dashboard.stop_caddy.connect(self.stop_caddy_wrapper)
+        self.dashboard.restart_caddy.connect(self.restart_caddy_wrapper)
 
-        # Route Manager Signals
-        self.route_manager.add_route.connect(self.add_route)
-        self.route_manager.remove_route.connect(self.remove_route_wrapper)  # Wrapper verwenden
-        self.route_manager.refresh_routes.connect(self.load_routes)
+        # Route Manager Signals - mit Wrapper
+        self.route_manager.add_route.connect(self.add_route_wrapper)
+        self.route_manager.remove_route.connect(self.remove_route_wrapper)
+        self.route_manager.refresh_routes.connect(self.load_routes_wrapper)
 
-        # Docker Manager Signals
-        self.docker_manager.refresh_containers.connect(self.load_docker_containers_wrapper)  # Wrapper
-        self.docker_manager.start_container.connect(self.start_docker_container_wrapper)  # Wrapper
-        self.docker_manager.stop_container.connect(self.stop_docker_container_wrapper)  # Wrapper
-        self.docker_manager.restart_container.connect(self.restart_docker_container_wrapper)  # Wrapper
+        # Docker Manager Signals - mit Wrapper
+        self.docker_manager.refresh_containers.connect(self.load_docker_containers_wrapper)
+        self.docker_manager.start_container.connect(self.start_docker_container_wrapper)
+        self.docker_manager.stop_container.connect(self.stop_docker_container_wrapper)
+        self.docker_manager.restart_container.connect(self.restart_docker_container_wrapper)
 
     def setup_timers(self):
         """Timer für regelmäßige Updates einrichten"""
         # Status Update Timer
         self.status_timer = QTimer()
         self.status_timer.timeout.connect(self.safe_update_status)
-        self.status_timer.start(5000)  # Alle 5 Sekunden
+        self.status_timer.start(10000)  # Alle 10 Sekunden
 
         # Metrics Update Timer
         self.metrics_timer = QTimer()
         self.metrics_timer.timeout.connect(self.safe_update_metrics)
-        self.metrics_timer.start(2000)  # Alle 2 Sekunden
+        self.metrics_timer.start(5000)  # Alle 5 Sekunden
 
         # Flags für laufende Updates
         self.status_updating = False
@@ -183,6 +154,8 @@ class MainWindow(QMainWindow):
         """Async Status Update"""
         try:
             await self.update_status()
+        except Exception as e:
+            print(f"Status Update Error: {e}")
         finally:
             self.status_updating = False
 
@@ -196,12 +169,17 @@ class MainWindow(QMainWindow):
         """Async Metrics Update"""
         try:
             await self.update_metrics()
+        except Exception as e:
+            print(f"Metrics Update Error: {e}")
         finally:
             self.metrics_updating = False
 
-    # ============= Async Slots =============
+    # ============= Async Methoden mit Wrapper-Pattern =============
 
-    @asyncSlot()
+    def initial_load_wrapper(self):
+        """Wrapper für initial_load"""
+        asyncio.create_task(self.initial_load())
+
     async def initial_load(self):
         """Initiale Daten laden"""
         # Verbindung prüfen
@@ -211,30 +189,34 @@ class MainWindow(QMainWindow):
             await self.update_status()
             await self.load_routes()
             await self.update_metrics()
-            await self.load_docker_containers()  # Docker Container laden
+            await self.load_docker_containers()
         else:
             self.status_bar.showMessage("Server nicht erreichbar")
             self.show_error("Konnte keine Verbindung zum Server herstellen")
 
-    @asyncSlot()
     async def update_status(self):
         """Caddy Status aktualisieren"""
         await self.api_client.get_caddy_status()
 
-    @asyncSlot()
     async def update_metrics(self):
         """Metriken aktualisieren"""
         await self.api_client.get_metrics()
 
-    @asyncSlot()
+    def load_routes_wrapper(self):
+        """Wrapper für load_routes"""
+        asyncio.create_task(self.load_routes())
+
     async def load_routes(self):
         """Routes laden"""
         await self.api_client.get_routes()
 
-    @asyncSlot()
+    def install_caddy_wrapper(self):
+        """Wrapper für install_caddy"""
+        asyncio.create_task(self.install_caddy())
+
     async def install_caddy(self):
         """Caddy installieren"""
-        # Timer temporär stoppen um Konflikte zu vermeiden
+        # Timer temporär stoppen
         self.status_timer.stop()
         self.metrics_timer.stop()
 
@@ -244,7 +226,6 @@ class MainWindow(QMainWindow):
         progress.show()
 
         try:
-            # Verwende normale HTTP-Installation statt WebSocket
             result = await self.api_client.install_caddy()
             progress.close()
 
@@ -259,13 +240,15 @@ class MainWindow(QMainWindow):
         finally:
             await self.update_status()
             # Timer wieder starten
-            self.status_timer.start(5000)
-            self.metrics_timer.start(2000)
+            self.status_timer.start(10000)
+            self.metrics_timer.start(5000)
 
-    @asyncSlot()
+    def start_caddy_wrapper(self):
+        """Wrapper für start_caddy"""
+        asyncio.create_task(self.start_caddy())
+
     async def start_caddy(self):
         """Caddy starten"""
-        # Timer temporär stoppen
         self.status_timer.stop()
         self.metrics_timer.stop()
 
@@ -273,14 +256,15 @@ class MainWindow(QMainWindow):
         try:
             await self.api_client.start_caddy()
         finally:
-            # Timer wieder starten
-            self.status_timer.start(5000)
-            self.metrics_timer.start(2000)
+            self.status_timer.start(10000)
+            self.metrics_timer.start(5000)
 
-    @asyncSlot()
+    def stop_caddy_wrapper(self):
+        """Wrapper für stop_caddy"""
+        asyncio.create_task(self.stop_caddy())
+
     async def stop_caddy(self):
         """Caddy stoppen"""
-        # Timer temporär stoppen
         self.status_timer.stop()
         self.metrics_timer.stop()
 
@@ -288,14 +272,15 @@ class MainWindow(QMainWindow):
         try:
             await self.api_client.stop_caddy()
         finally:
-            # Timer wieder starten
-            self.status_timer.start(5000)
-            self.metrics_timer.start(2000)
+            self.status_timer.start(10000)
+            self.metrics_timer.start(5000)
 
-    @asyncSlot()
+    def restart_caddy_wrapper(self):
+        """Wrapper für restart_caddy"""
+        asyncio.create_task(self.restart_caddy())
+
     async def restart_caddy(self):
         """Caddy neu starten"""
-        # Timer temporär stoppen
         self.status_timer.stop()
         self.metrics_timer.stop()
 
@@ -303,11 +288,13 @@ class MainWindow(QMainWindow):
         try:
             await self.api_client.restart_caddy()
         finally:
-            # Timer wieder starten
-            self.status_timer.start(5000)
-            self.metrics_timer.start(2000)
+            self.status_timer.start(10000)
+            self.metrics_timer.start(5000)
 
-    @asyncSlot()
+    def add_route_wrapper(self, route_data: dict):
+        """Wrapper für add_route"""
+        asyncio.create_task(self.add_route(route_data))
+
     async def add_route(self, route_data: dict):
         """Route hinzufügen"""
         self.status_bar.showMessage("Füge Route hinzu...")
@@ -317,7 +304,7 @@ class MainWindow(QMainWindow):
             route_data["path"]
         )
 
-    # ============= Docker Management (ohne asyncSlot) =============
+    # ============= Docker Management =============
 
     def remove_route_wrapper(self, domain: str):
         """Wrapper für async remove_route"""
@@ -364,11 +351,14 @@ class MainWindow(QMainWindow):
         await self.api_client.control_docker_container(container_id, "restart")
         await self.load_docker_containers()
 
-    @asyncSlot()
+    # ============= Backup/Restore =============
+
+    def create_backup_wrapper(self):
+        """Wrapper für create_backup"""
+        asyncio.create_task(self.create_backup())
+
     async def create_backup(self):
         """Backup erstellen"""
-        from PySide6.QtWidgets import QInputDialog
-
         name, ok = QInputDialog.getText(
             self, "Backup erstellen",
             "Backup-Name (optional):"
@@ -378,11 +368,12 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("Erstelle Backup...")
             await self.api_client.backup_config(name if name else None)
 
-    @asyncSlot()
+    def restore_backup_wrapper(self):
+        """Wrapper für restore_backup"""
+        asyncio.create_task(self.restore_backup())
+
     async def restore_backup(self):
         """Backup wiederherstellen"""
-        from PySide6.QtWidgets import QInputDialog
-
         # Backups laden
         backups = await self.api_client.get_backups()
         if not backups:
@@ -407,7 +398,10 @@ class MainWindow(QMainWindow):
                 await self.api_client.restore_config(name)
                 await self.load_routes()
 
-    @asyncSlot()
+    def refresh_all_wrapper(self):
+        """Wrapper für refresh_all"""
+        asyncio.create_task(self.refresh_all())
+
     async def refresh_all(self):
         """Alle Daten aktualisieren"""
         self.status_bar.showMessage("Aktualisiere...")
