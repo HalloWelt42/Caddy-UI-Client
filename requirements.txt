@@ -24,6 +24,7 @@ qasync==0.27.1             # Async/Await Integration für Qt Event Loop
 QtAwesome==1.4.0           # FontAwesome Icons für Qt
 QtPy==2.4.3                # Qt-Abstraktionslayer (PyQt/PySide)
 shiboken6==6.9.1           # Binding Generator für C++/Qt
+asyncslot==0.3.1           # Async/Await Unterstützung für Qt-Slots
 
 # -----------------------
 # Utilities

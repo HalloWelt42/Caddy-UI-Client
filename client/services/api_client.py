@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Optional
 from PySide6.QtCore import QObject, Signal
 import json
 
+
 class APIClient(QObject):
     """Async API Client mit Qt Signals"""
 
@@ -21,7 +22,19 @@ class APIClient(QObject):
     def __init__(self, base_url: str = "http://localhost:8000"):
         super().__init__()
         self.base_url = base_url
-        self.client = httpx.AsyncClient(timeout=30.0)
+        # Längere Timeouts für stabilere Verbindung
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=10.0,  # Verbindungsaufbau
+                read=30.0,  # Lesen der Antwort
+                write=10.0,  # Schreiben der Anfrage
+                pool=10.0  # Connection Pool
+            ),
+            limits=httpx.Limits(
+                max_keepalive_connections=5,
+                max_connections=10
+            )
+        )
 
     async def check_connection(self) -> bool:
         """Prüft Verbindung zum Server"""
@@ -41,8 +54,20 @@ class APIClient(QObject):
             data = response.json()
             self.status_updated.emit(data)
             return data
+        except httpx.TimeoutException:
+            # Bei Timeout - keine Error-Meldung, nur Status unknown
+            data = {"status": "unknown", "message": "Timeout - Server antwortet nicht"}
+            self.status_updated.emit(data)
+            return data
+        except httpx.ConnectError:
+            # Bei Verbindungsfehler
+            data = {"status": "error", "message": "Server nicht erreichbar"}
+            self.status_updated.emit(data)
+            return data
         except Exception as e:
-            self.error_occurred.emit(f"Status-Fehler: {str(e)}")
+            # Nur bei unerwarteten Fehlern Error anzeigen
+            if "ReadTimeout" not in str(e):
+                self.error_occurred.emit(f"Status-Fehler: {str(e)}")
             return {"status": "error", "message": str(e)}
 
     async def install_caddy(self) -> Dict[str, Any]:
@@ -192,8 +217,16 @@ class APIClient(QObject):
             data = response.json()
             self.metrics_updated.emit(data)
             return data
+        except httpx.TimeoutException:
+            # Bei Timeout keine Fehlermeldung
+            return {}
+        except httpx.ConnectError:
+            # Bei Verbindungsfehler
+            return {}
         except Exception as e:
-            self.error_occurred.emit(f"Metriken-Fehler: {str(e)}")
+            # Nur bei unerwarteten Fehlern
+            if "ReadTimeout" not in str(e):
+                self.error_occurred.emit(f"Metriken-Fehler: {str(e)}")
             return {}
 
     async def get_metrics_history(self) -> List[Dict[str, Any]]:
