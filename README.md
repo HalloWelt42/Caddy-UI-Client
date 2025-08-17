@@ -26,7 +26,7 @@ Eine Desktop-Anwendung zur Verwaltung von Caddy Server mit automatischem HTTPS/T
 
 ```bash
 # Repository klonen
-git clone https://github.com/yourusername/caddy-manager.git
+git https://github.com/HalloWelt42/Caddy-UI-Client.git caddy-manager
 cd caddy-manager
 
 # Virtuelle Umgebung erstellen
