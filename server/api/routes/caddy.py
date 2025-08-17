@@ -133,11 +133,16 @@ async def list_backups():
     from server.config.settings import settings
 
     backups = []
-    for backup_file in settings.backups_dir.glob("caddy_config_*.json"):
+
+    # GEÄNDERT: Suche nach .backup Dateien statt .json
+    for backup_file in settings.backups_dir.glob("caddyfile_*.backup"):
         backups.append({
             "name": backup_file.name,
             "size": backup_file.stat().st_size,
             "modified": backup_file.stat().st_mtime
         })
+
+    # Sortiere nach Änderungsdatum (neueste zuerst)
+    backups.sort(key=lambda x: x["modified"], reverse=True)
 
     return backups

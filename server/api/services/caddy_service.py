@@ -750,26 +750,25 @@ class CaddyService:
             if not name:
                 name = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            # GEÄNDERT: Backup der Caddyfile statt JSON
+            # Backup der Caddyfile
             backup_file = settings.backups_dir / f"caddyfile_{name}.backup"
             settings.backups_dir.mkdir(parents=True, exist_ok=True)
 
             # Prüfe ob Caddyfile existiert
             if CADDYFILE.exists():
-                # Kopiere Caddyfile als Backup
                 import shutil
                 shutil.copy2(CADDYFILE, backup_file)
 
                 return {
                     "success": True,
                     "message": f"Backup erstellt: {backup_file.name}",
-                    "path": str(backup_file)
+                    "path": str(backup_file),
+                    "filename": backup_file.name
                 }
             else:
                 # Erstelle Default-Config wenn keine existiert
                 await self.create_default_config()
 
-                # Dann nochmal versuchen
                 if CADDYFILE.exists():
                     import shutil
                     shutil.copy2(CADDYFILE, backup_file)
@@ -777,7 +776,8 @@ class CaddyService:
                     return {
                         "success": True,
                         "message": f"Default-Config gesichert: {backup_file.name}",
-                        "path": str(backup_file)
+                        "path": str(backup_file),
+                        "filename": backup_file.name
                     }
                 else:
                     return {
@@ -802,25 +802,124 @@ class CaddyService:
                     "error": f"Backup-Datei nicht gefunden: {backup_name}"
                 }
 
-            with open(backup_file, "r") as f:
-                config = json.load(f)
+            # Restore der Caddyfile
+            import shutil
 
-            # Config lokal speichern
-            with open(CADDY_JSON_CONFIG, "w") as f:
-                json.dump(config, f, indent=2)
+            # Backup der aktuellen Config vor dem Restore
+            temp_backup = None
+            if CADDYFILE.exists():
+                temp_backup = CADDYFILE.with_suffix('.backup.tmp')
+                shutil.copy2(CADDYFILE, temp_backup)
+
+            try:
+                # Restore durchführen
+                shutil.copy2(backup_file, CADDYFILE)
+
+                # Wenn Caddy läuft, Config neu laden
+                status = await self.get_status()
+                if status["status"] == "running":
+                    # Caddy reload mit Caddyfile
+                    result = subprocess.run(
+                        [str(CADDY_BINARY), "reload", "--config", str(CADDYFILE), "--adapter", "caddyfile"],
+                        capture_output=True,
+                        text=True,
+                        cwd=str(settings.project_root)
+                    )
+
+                    if result.returncode != 0:
+                        # Restore der alten Config bei Fehler
+                        if temp_backup and temp_backup.exists():
+                            shutil.copy2(temp_backup, CADDYFILE)
+                            temp_backup.unlink()
+
+                        return {
+                            "success": False,
+                            "error": f"Config ungültig: {result.stderr}"
+                        }
+
+                # Cleanup temp backup
+                if temp_backup and temp_backup.exists():
+                    temp_backup.unlink()
+
+                return {
+                    "success": True,
+                    "message": f"Konfiguration wiederhergestellt von: {backup_name}"
+                }
+
+            except Exception as e:
+                # Restore der alten Config bei Fehler
+                if temp_backup and temp_backup.exists():
+                    shutil.copy2(temp_backup, CADDYFILE)
+                    temp_backup.unlink()
+
+                return {
+                    "success": False,
+                    "error": f"Restore-Fehler: {str(e)}"
+                }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Restore-Fehler: {str(e)}"
+            }
+
+    async def list_backups(self) -> List[Dict[str, Any]]:
+        """Liste alle Backups auf"""
+        try:
+            from datetime import datetime
+
+            backups = []
+            settings.backups_dir.mkdir(parents=True, exist_ok=True)
+
+            # Suche nach .backup Dateien
+            for backup_file in settings.backups_dir.glob("caddyfile_*.backup"):
+                stat = backup_file.stat()
+                backups.append({
+                    "name": backup_file.name,
+                    "size": stat.st_size,
+                    "modified": stat.st_mtime,
+                    "modified_str": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                })
+
+            # Sortiere nach Änderungsdatum (neueste zuerst)
+            backups.sort(key=lambda x: x["modified"], reverse=True)
+
+            return backups
+
+        except Exception as e:
+            print(f"Fehler beim Auflisten der Backups: {e}")
+            return []
+
+    async def restore_config(self, backup_name: str) -> Dict[str, Any]:
+        """Stellt eine gesicherte Konfiguration wieder her"""
+        try:
+            backup_file = settings.backups_dir / backup_name
+
+            if not backup_file.exists():
+                return {
+                    "success": False,
+                    "error": f"Backup-Datei nicht gefunden: {backup_name}"
+                }
+
+            # GEÄNDERT: Restore der Caddyfile statt JSON
+            import shutil
+            shutil.copy2(backup_file, CADDYFILE)
 
             # Wenn Caddy läuft, Config neu laden
             status = await self.get_status()
             if status["status"] == CaddyStatus.RUNNING:
-                response = await self.client.put(
-                    f"{settings.caddy_api_url}/config/",
-                    json=config
+                # Caddy reload mit Caddyfile
+                result = subprocess.run(
+                    [str(CADDY_BINARY), "reload", "--config", str(CADDYFILE), "--adapter", "caddyfile"],
+                    capture_output=True,
+                    text=True,
+                    cwd=str(settings.project_root)
                 )
 
-                if response.status_code != 200:
+                if result.returncode != 0:
                     return {
                         "success": False,
-                        "error": f"Fehler beim Laden der Config: {response.text}"
+                        "error": f"Fehler beim Laden der Config: {result.stderr}"
                     }
 
             return {
