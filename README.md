@@ -1,327 +1,265 @@
 # Caddy Manager
 
-A desktop application for managing Caddy Server with automatic HTTPS/TLS support, Docker integration, and real-time monitoring.
+Eine Desktop-Anwendung zur Verwaltung von Caddy Server mit automatischem HTTPS/TLS-Support, Docker-Integration und Echtzeit-Überwachung.
 
-## Features
+## Funktionen
 
-- **Caddy Server Management**: Install, configure, start/stop Caddy directly from the GUI
-- **Automatic HTTPS**: Let's Encrypt for public domains, internal certificates for local development
-- **Route Management**: Add, remove, and manage reverse proxy routes through a visual interface
-- **Docker Integration**: Monitor and control Docker containers
-- **Real-time Monitoring**: System metrics (CPU, RAM) and service status with WebSocket streaming
-- **Cross-platform Architecture**: FastAPI backend with PySide6 (Qt6) frontend
+* **Caddy Server Verwaltung**: Installation, Konfiguration, Start/Stop von Caddy direkt aus der GUI
+* **Automatisches HTTPS**: Let's Encrypt für öffentliche Domains, interne Zertifikate für lokale Entwicklung
+* **Routenverwaltung**: Hinzufügen, Entfernen und Verwalten von Reverse-Proxy-Routen über eine visuelle Oberfläche
+* **Docker-Integration**: Überwachung und Steuerung von Docker-Containern
+* **Echtzeit-Überwachung**: Systemmetriken (CPU, RAM) und Servicestatus mit WebSocket-Streaming
+* **Plattformübergreifende Architektur**: FastAPI-Backend mit PySide6 (Qt6)-Frontend
 
-## Requirements
+## Anforderungen
 
-- Python 3.11 or higher
-- macOS with Apple Silicon (M1/M2/M3) - currently supported
-- Docker Desktop (optional, for container management)
+* Python 3.11 oder höher
+* macOS mit Apple Silicon (M1/M2/M3) – derzeit unterstützt
+* Docker Desktop (optional, für Container-Verwaltung)
 
 ## Installation
 
 ```bash
-# Clone the repository
+# Repository klonen
 git clone https://github.com/yourusername/caddy-manager.git
 cd caddy-manager
 
-# Create virtual environment
+# Virtuelle Umgebung erstellen
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate  # Unter Windows: .venv\Scripts\activate
 
-# Install dependencies
+# Abhängigkeiten installieren
 pip install -r requirements.txt
 ```
 
-## Usage
+## Nutzung
 
-### Quick Start
+### Schnellstart
 
 ```bash
-# Make the start script executable
+# Startskript ausführbar machen
 chmod +x start.sh
 
-# Start both backend and frontend
+# Backend und Frontend starten
 ./start.sh
 
-# Or start components separately:
+# Oder Komponenten separat starten:
 python run_server.py  # Terminal 1: Backend (FastAPI)
 python run_client.py  # Terminal 2: Frontend (PySide6)
 ```
 
-### Available Commands
+### Verfügbare Befehle
 
 ```bash
-./start.sh start    # Start backend and frontend
-./start.sh stop     # Stop all services
-./start.sh restart  # Restart all services
-./start.sh status   # Show service status
-./start.sh install  # Install dependencies only
-./start.sh dev      # Development mode with terminal logging
+./start.sh start    # Backend und Frontend starten
+./start.sh stop     # Alle Dienste stoppen
+./start.sh restart  # Alle Dienste neu starten
+./start.sh status   # Servicestatus anzeigen
+./start.sh install  # Nur Abhängigkeiten installieren
+./start.sh dev      # Entwicklungsmodus mit Terminal-Logging
 ```
 
-## Project Structure
+## Projektstruktur
 
 ```
 caddy-manager/
-├── server/          # FastAPI backend
-│   ├── api/         # API routes and services
-│   └── config/      # Server configuration
-├── client/          # PySide6 frontend
-│   ├── ui/          # GUI components
-│   └── services/    # API client
-├── config/          # Configuration files
-│   └── caddy/       # Caddyfile storage
-├── data/            # Runtime data
-│   ├── caddy/       # Caddy binary
-│   ├── backups/     # Configuration backups
-│   └── logs/        # Application logs
-└── shared/          # Shared utilities
+├── server/          # FastAPI Backend
+│   ├── api/         # API-Routen und Services
+│   └── config/      # Serverkonfiguration
+├── client/          # PySide6 Frontend
+│   ├── ui/          # GUI-Komponenten
+│   └── services/    # API-Client
+├── config/          # Konfigurationsdateien
+│   └── caddy/       # Caddyfile-Speicher
+├── data/            # Laufzeitdaten
+│   ├── caddy/       # Caddy-Binary
+│   ├── backups/     # Konfigurations-Backups
+│   └── logs/        # Anwendungs-Logs
+└── shared/          # Gemeinsame Hilfsfunktionen
 ```
 
-## API Documentation
+## API-Dokumentation
 
-The backend runs on `http://localhost:8000` with full OpenAPI documentation available at `/docs`.
+Das Backend läuft auf `http://localhost:8000` mit vollständiger OpenAPI-Dokumentation unter `/docs`.
 
-### Core Endpoints
+### Zentrale Endpunkte
 
-#### Server Information
-- `GET /` - Server info and available endpoints
-- `GET /health` - Health check with service status
+#### Server-Informationen
 
-#### Caddy Management
-- `GET /api/caddy/status` - Get Caddy status (running/stopped/not_installed)
-- `POST /api/caddy/install` - Install Caddy binary
-- `POST /api/caddy/start` - Start Caddy server
-- `POST /api/caddy/stop` - Stop Caddy server
-- `POST /api/caddy/restart` - Restart Caddy server
+* `GET /` - Serverinfo und verfügbare Endpunkte
+* `GET /health` - Gesundheitscheck mit Servicestatus
 
-#### Route Management
-- `GET /api/caddy/routes` - List all configured routes
-- `POST /api/caddy/routes` - Add new route
-  ```json
-  {
-    "domain": "example.local",
-    "upstream": "http://localhost:3000",
-    "path": "/"
-  }
-  ```
-- `DELETE /api/caddy/routes/{domain}` - Remove route by domain
+#### Caddy-Verwaltung
 
-#### Backup & Restore
-- `POST /api/caddy/backup` - Create configuration backup
-  ```json
-  {
-    "name": "my_backup"  // optional
-  }
-  ```
-- `POST /api/caddy/restore` - Restore from backup
-  ```json
-  {
-    "backup_name": "caddy_config_20250101_120000.json"
-  }
-  ```
-- `GET /api/caddy/backups` - List all available backups
+* `GET /api/caddy/status` - Caddy-Status abfragen (running/stopped/not\_installed)
+* `POST /api/caddy/install` - Caddy-Binary installieren
+* `POST /api/caddy/start` - Caddy-Server starten
+* `POST /api/caddy/stop` - Caddy-Server stoppen
+* `POST /api/caddy/restart` - Caddy-Server neu starten
 
-#### System Monitoring
-- `GET /api/monitoring/metrics` - Current system metrics (CPU, RAM, requests/sec)
-- `GET /api/monitoring/metrics/history` - Historical metrics data
+#### Routenverwaltung
 
-#### Docker Management
-- `GET /api/monitoring/docker/containers` - List all Docker containers
-- `POST /api/monitoring/docker/containers/{container_id}/{action}` - Container control
-  - Actions: `start`, `stop`, `restart`
+* `GET /api/caddy/routes` - Alle konfigurierten Routen auflisten
+* `POST /api/caddy/routes` - Neue Route hinzufügen
+* `DELETE /api/caddy/routes/{domain}` - Route nach Domain entfernen
 
-### WebSocket Endpoints (Real-time Updates)
+#### Backup & Wiederherstellung
 
-- `WS /api/caddy/install/progress` - Real-time installation progress
-  ```json
-  // Receive updates:
-  {
-    "message": "Downloading Caddy...",
-    "progress": 45
-  }
-  ```
+* `POST /api/caddy/backup` - Konfigurations-Backup erstellen
+* `POST /api/caddy/restore` - Backup wiederherstellen
+* `GET /api/caddy/backups` - Alle verfügbaren Backups auflisten
 
-- `WS /api/monitoring/metrics/stream` - Live metrics stream
-  ```json
-  // Receive metrics every 5 seconds:
-  {
-    "cpu_percent": 12.5,
-    "ram_percent": 45.2,
-    "requests_per_second": 10,
-    "avg_response_time": 25.3
-  }
-  ```
+#### Systemüberwachung
 
-### API Testing
+* `GET /api/monitoring/metrics` - Aktuelle Systemmetriken (CPU, RAM, requests/sec)
+* `GET /api/monitoring/metrics/history` - Historische Metriken
 
-A comprehensive test suite is included:
+#### Docker-Verwaltung
+
+* `GET /api/monitoring/docker/containers` - Alle Docker-Container auflisten
+* `POST /api/monitoring/docker/containers/{container_id}/{action}` - Container steuern (start, stop, restart)
+
+### WebSocket-Endpunkte (Echtzeit-Updates)
+
+* `WS /api/caddy/install/progress` - Echtzeit-Installationsfortschritt
+* `WS /api/monitoring/metrics/stream` - Live-Metriken-Stream
+
+### API-Tests
+
+Eine umfassende Testsuite ist enthalten:
 
 ```bash
-# Run all API tests
+# Alle API-Tests ausführen
 python test_api_endpoints.py
 
-# Test with custom server URL
+# Test mit eigener Server-URL
 python test_api_endpoints.py --url http://localhost:8000
 
-# Interactive testing mode
+# Interaktiver Testmodus
 python test_api_endpoints.py --interactive
 ```
 
-## Configuration
+## Konfiguration
 
-### Environment Variables
+### Umgebungsvariablen
 
-The application uses a `.env` file (auto-created on first run):
-
-```env
-PROJECT_ROOT=/path/to/caddy-manager
-DATA_DIR=/path/to/caddy-manager/data
-CONFIG_DIR=/path/to/caddy-manager/config
-LOGS_DIR=/path/to/caddy-manager/data/logs
-CADDY_BINARY=/path/to/caddy-manager/data/caddy/caddy
-CADDYFILE=/path/to/caddy-manager/config/caddy/Caddyfile
-```
+Die Anwendung nutzt eine `.env`-Datei (automatisch beim ersten Start erstellt).
 
 ### Caddyfile
 
-The Caddy configuration is managed automatically but can be manually edited at `config/caddy/Caddyfile`:
+Die Caddy-Konfiguration wird automatisch verwaltet, kann aber manuell in `config/caddy/Caddyfile` angepasst werden.
 
-```caddyfile
-# Admin API
-{
-    admin localhost:2019
-    email admin@localhost
-    local_certs
-}
+## Entwicklung
 
-# Example route
-example.local {
-    tls internal
-    reverse_proxy localhost:3000
-}
-```
-
-## Development
-
-### Running in Development Mode
+### Im Entwicklungsmodus starten
 
 ```bash
-# Backend with auto-reload
+# Backend mit Auto-Reload
 uvicorn server.main:app --reload --host 0.0.0.0 --port 8000
 
-# Frontend with debug output
+# Frontend mit Debug-Ausgabe
 python run_client.py --debug
 ```
 
-### Project Dependencies
+### Projektabhängigkeiten
 
-Core dependencies include:
-- **Backend**: FastAPI, uvicorn, httpx, psutil, docker, pydantic
-- **Frontend**: PySide6, qasync, QtAwesome
-- **Utilities**: orjson, watchdog, python-dotenv
+Kernabhängigkeiten sind:
 
-See `requirements.txt` for complete list with versions.
+* **Backend**: FastAPI, uvicorn, httpx, psutil, docker, pydantic
+* **Frontend**: PySide6, qasync, QtAwesome
+* **Utilities**: orjson, watchdog, python-dotenv
 
-## Known Limitations
+## Bekannte Einschränkungen
 
-- Currently supports only macOS with Apple Silicon (Phase 1)
-- No authentication (designed for local development)
-- Basic Caddyfile parsing (complex configurations may need manual editing)
-- WebSocket progress tracking may be unstable in some environments
+* Unterstützt derzeit nur macOS mit Apple Silicon (Phase 1)
+* Keine Authentifizierung (für lokale Entwicklung gedacht)
+* Einfache Caddyfile-Parser (komplexe Konfigurationen evtl. manuell nötig)
+* WebSocket-Fortschrittsanzeige kann in manchen Umgebungen instabil sein
 
-## Planned Features (Phase 2)
+## Geplante Funktionen (Phase 2)
 
-- **Platform Support**: Windows and Linux compatibility
-- **Enhanced Features**: 
-  - Log viewer with filtering
-  - Configuration templates
-  - Multi-server management
-  - Plugin system
-- **UI Improvements**:
-  - Dark/Light mode toggle
-  - Custom themes
-  - Keyboard shortcuts
-  - Status history graphs
+* **Plattformunterstützung**: Windows- und Linux-Kompatibilität
+* **Erweiterte Features**:
 
-## Troubleshooting
+  * Log-Viewer mit Filterung
+  * Konfigurations-Templates
+  * Multi-Server-Management
+  * Plugin-System
+* **UI-Verbesserungen**:
 
-### Common Issues
+  * Dark-/Light-Mode Umschaltung
+  * Eigene Themes
+  * Tastenkombinationen
+  * Status-Historien-Grafiken
 
-1. **"Caddy not installed" error**
-   - Use the Install button in the Dashboard
-   - Or manually: `POST /api/caddy/install`
+## Fehlerbehebung
 
-2. **"Connection refused" on API calls**
-   - Ensure backend is running: `python run_server.py`
-   - Check port 8000 is not in use
+### Häufige Probleme
 
-3. **Docker containers not showing**
-   - Ensure Docker Desktop is running
-   - Check Docker socket permissions
+1. **"Caddy not installed" Fehler**
 
-4. **SSL certificate errors**
-   - Run `caddy trust` to install root certificate
-   - For local domains, use `.local` suffix
+   * Installieren über den Button im Dashboard
+   * Oder manuell: `POST /api/caddy/install`
 
-### Debug Mode
+2. **"Connection refused" bei API-Aufrufen**
 
-Enable detailed logging:
+   * Sicherstellen, dass das Backend läuft: `python run_server.py`
+   * Prüfen, ob Port 8000 frei ist
+
+3. **Docker-Container werden nicht angezeigt**
+
+   * Prüfen, ob Docker Desktop läuft
+   * Socket-Berechtigungen prüfen
+
+4. **SSL-Zertifikatfehler**
+
+   * `caddy trust` ausführen, um Root-Zertifikat zu installieren
+   * Für lokale Domains `.local`-Suffix verwenden
+
+### Debug-Modus
+
+Detailliertes Logging aktivieren:
+
 ```bash
-# Start with debug script
+# Mit Debug-Skript starten
 ./debug_start.sh
 
-# Or set environment variable
+# Oder Umgebungsvariable setzen
 export DEBUG=true
 python run_server.py
 ```
 
-## Contributing
+## Mitwirken
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Beiträge sind willkommen! Pull Requests können jederzeit eingereicht werden.
 
-### Development Setup
+### Entwicklungs-Setup
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+1. Repository forken
+2. Feature-Branch erstellen (`git checkout -b feature/AmazingFeature`)
+3. Änderungen committen (`git commit -m 'Add some AmazingFeature'`)
+4. Branch pushen (`git push origin feature/AmazingFeature`)
+5. Pull Request öffnen
 
-## License
+## Lizenz
 
 MIT License
 
 Copyright (c) 2025
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Die Software wird ohne Gewährleistung bereitgestellt, inklusive, aber nicht beschränkt auf Marktgängigkeit, Eignung für einen bestimmten Zweck und Nichtverletzung von Rechten. In keinem Fall haften die Autoren oder Rechteinhaber für Ansprüche, Schäden oder andere Verpflichtungen.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+## Danksagungen
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-## Acknowledgments
-
-- [Caddy Server](https://caddyserver.com/) - The ultimate server with automatic HTTPS
-- [FastAPI](https://fastapi.tiangolo.com/) - Modern web API framework
-- [PySide6](https://doc.qt.io/qtforpython/) - Python bindings for Qt6
-- [Docker](https://www.docker.com/) - Container platform
+* [Caddy Server](https://caddyserver.com/) - Der ultimative Server mit automatischem HTTPS
+* [FastAPI](https://fastapi.tiangolo.com/) - Modernes Web-API-Framework
+* [PySide6](https://doc.qt.io/qtforpython/) - Python-Bindings für Qt6
+* [Docker](https://www.docker.com/) - Container-Plattform
 
 ## Support
 
-For issues, questions, or suggestions:
-- Open an issue on GitHub
-- Check the [API documentation](http://localhost:8000/docs)
-- Review the test suite for usage examples
+Bei Problemen, Fragen oder Vorschlägen:
+
+* Ein Issue auf GitHub eröffnen
+* Die [API-Dokumentation](http://localhost:8000/docs) prüfen
+* Die Testsuite als Beispiel nutzen
