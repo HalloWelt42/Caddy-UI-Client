@@ -31,7 +31,7 @@ cd caddy-manager
 
 # Virtuelle Umgebung erstellen
 python -m venv .venv
-source .venv/bin/activate  # Unter Windows: .venv\Scripts\activate
+source .venv/bin/activate  
 
 # Abhängigkeiten installieren
 pip install -r requirements.txt
