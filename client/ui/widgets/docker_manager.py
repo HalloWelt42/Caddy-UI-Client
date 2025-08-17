@@ -50,7 +50,7 @@ class DockerManagerWidget(QWidget):
         ])
 
         # Zeilenhöhe vergrößern für bessere Button-Sichtbarkeit
-        self.table.verticalHeader().setDefaultSectionSize(60)  # 3x größer (default ~20)
+        self.table.verticalHeader().setDefaultSectionSize(75)
 
         # Header anpassen
         header = self.table.horizontalHeader()
@@ -133,6 +133,11 @@ class DockerManagerWidget(QWidget):
             # Action Buttons
             button_layout = QHBoxLayout()
             button_widget = QWidget()
+
+            button_widget = QWidget()
+            button_widget.setStyleSheet("background: transparent; border: none;")
+            button_layout.setContentsMargins(0, 0, 0, 0)
+            button_layout.setSpacing(5)
 
             container_id = container.get("id", "")
 

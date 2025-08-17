@@ -1,9 +1,11 @@
 """
 Monitoring API Routes
 """
+import asyncio
 from fastapi import APIRouter, HTTPException, WebSocket
 from typing import List, Dict, Any
 
+from server.config.settings import settings
 from server.api.services import monitor_service
 
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
@@ -52,6 +54,3 @@ async def control_docker_container(container_id: str, action: str):
         raise HTTPException(status_code=400, detail=result.get("error"))
 
     return result
-
-import asyncio
-from server.config.settings import settings
