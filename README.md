@@ -1,4 +1,9 @@
-# Caddy Manager
+# Caddy Manager - für MAC mit Apple Silicon (M1-M4)
+
+![](./docs/Bildschirmfoto%202025-08-17%20um%2015.08.30.png)
+![](./docs/Bildschirmfoto%202025-08-17%20um%2015.08.36.png)
+![](./docs/Bildschirmfoto%202025-08-17%20um%2015.08.41.png)
+
 
 Eine Desktop-Anwendung zur Verwaltung von Caddy Server mit automatischem HTTPS/TLS-Support, Docker-Integration und Echtzeit-Überwachung.
 
@@ -35,6 +40,10 @@ pip install -r requirements.txt
 ## Nutzung
 
 ### Schnellstart
+
+**Achtung!** 
+Docker muss installiert sein, um die Docker-Integration zu nutzen und gestartet zu werden.
+
 
 ```bash
 # Startskript ausführbar machen
