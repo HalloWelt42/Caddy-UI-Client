@@ -1,9 +1,9 @@
 """
-Docker Container Manager Widget
+Docker Container Manager Widget - Vereinheitlichtes Design (mit funktionierendem Dropdown)
 """
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QPushButton, QLabel, QHeaderView, QMessageBox
+    QPushButton, QLabel, QHeaderView, QMessageBox, QMenu, QToolButton
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 import qtawesome as qta
@@ -49,8 +49,8 @@ class DockerManagerWidget(QWidget):
             "Name", "Image", "Status", "Ports", "ID", "Aktionen"
         ])
 
-        # Zeilenhöhe vergrößern für bessere Button-Sichtbarkeit
-        self.table.verticalHeader().setDefaultSectionSize(75)
+        # Einheitliche Zeilenhöhe wie bei Routes
+        self.table.verticalHeader().setDefaultSectionSize(45)
 
         # Header anpassen
         header = self.table.horizontalHeader()
@@ -60,7 +60,7 @@ class DockerManagerWidget(QWidget):
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(5, 250)  # Mehr Platz für Buttons
+        self.table.setColumnWidth(5, 120)  # Gleiche Breite wie Route Manager
 
         # ID-Spalte verstecken (nur für interne Verwendung)
         self.table.setColumnHidden(4, True)
@@ -109,19 +109,28 @@ class DockerManagerWidget(QWidget):
             status_item = QTableWidgetItem(status)
             status_item.setFlags(status_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
-            # Status-Farbe
+            # Status-Farbe mit Icons
             if status == "running":
+                status_icon = qta.icon('fa5s.circle', color='#27ae60')
+                status_item.setIcon(status_icon)
+                status_item.setText(" Running")
                 status_item.setForeground(Qt.GlobalColor.green)
             elif status == "exited":
+                status_icon = qta.icon('fa5s.circle', color='#c0392b')
+                status_item.setIcon(status_icon)
+                status_item.setText(" Stopped")
                 status_item.setForeground(Qt.GlobalColor.red)
             else:
+                status_icon = qta.icon('fa5s.circle', color='#f39c12')
+                status_item.setIcon(status_icon)
+                status_item.setText(f" {status.capitalize()}")
                 status_item.setForeground(Qt.GlobalColor.yellow)
 
             self.table.setItem(row, 2, status_item)
 
             # Ports
             ports = container.get("ports", {})
-            ports_text = ", ".join([f"{k}:{v}" for k, v in ports.items()]) if ports else "-"
+            ports_text = ", ".join([f"{k}→{v}" for k, v in ports.items()]) if ports else "-"
             ports_item = QTableWidgetItem(ports_text)
             ports_item.setFlags(ports_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 3, ports_item)
@@ -130,29 +139,51 @@ class DockerManagerWidget(QWidget):
             id_item = QTableWidgetItem(container.get("id", ""))
             self.table.setItem(row, 4, id_item)
 
-            # Action Buttons
-            button_layout = QHBoxLayout()
-            button_widget = QWidget()
-
-            button_widget = QWidget()
-            button_widget.setStyleSheet("background: transparent; border: none;")
-            button_layout.setContentsMargins(0, 0, 0, 0)
-            button_layout.setSpacing(5)
-
+            # Action Button - Dropdown-Menü (jetzt QToolButton!)
             container_id = container.get("id", "")
+            container_name = container.get("name", "")
+
+            action_btn = QToolButton()
+            action_btn.setText("Aktionen")
+            action_btn.setIcon(qta.icon('fa5s.ellipsis-h'))
+            action_btn.setPopupMode(QToolButton.InstantPopup)
+            action_btn.setMaximumWidth(100)
+
+            # Menü erstellen
+            menu = QMenu(action_btn)
 
             if status == "running":
-                stop_btn = QPushButton(qta.icon('fa5s.stop', color='#c0392b'), "Stop")
-                stop_btn.clicked.connect(lambda checked, cid=container_id: self.stop_container.emit(cid))
-                button_layout.addWidget(stop_btn)
+                stop_action = menu.addAction(
+                    qta.icon('fa5s.stop', color='#c0392b'),
+                    "Stop"
+                )
+                stop_action.triggered.connect(
+                    lambda checked=False, cid=container_id: self.stop_container.emit(cid)
+                )
 
-                restart_btn = QPushButton(qta.icon('fa5s.sync'), "Restart")
-                restart_btn.clicked.connect(lambda checked, cid=container_id: self.restart_container.emit(cid))
-                button_layout.addWidget(restart_btn)
+                restart_action = menu.addAction(
+                    qta.icon('fa5s.sync', color='#f39c12'),
+                    "Restart"
+                )
+                restart_action.triggered.connect(
+                    lambda checked=False, cid=container_id: self.restart_container.emit(cid)
+                )
             else:
-                start_btn = QPushButton(qta.icon('fa5s.play', color='#27ae60'), "Start")
-                start_btn.clicked.connect(lambda checked, cid=container_id: self.start_container.emit(cid))
-                button_layout.addWidget(start_btn)
+                start_action = menu.addAction(
+                    qta.icon('fa5s.play', color='#27ae60'),
+                    "Start"
+                )
+                start_action.triggered.connect(
+                    lambda checked=False, cid=container_id: self.start_container.emit(cid)
+                )
 
-            button_widget.setLayout(button_layout)
-            self.table.setCellWidget(row, 5, button_widget)
+            # Separator und Info
+            menu.addSeparator()
+            info_action = menu.addAction(
+                qta.icon('fa5s.info-circle'),
+                f"ID: {container_id[:12]}"
+            )
+            info_action.setEnabled(False)
+
+            action_btn.setMenu(menu)
+            self.table.setCellWidget(row, 5, action_btn)
