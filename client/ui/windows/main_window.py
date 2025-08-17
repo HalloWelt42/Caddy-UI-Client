@@ -1,5 +1,5 @@
 """
-Hauptfenster der Caddy Manager Anwendung
+Hauptfenster der Caddy Manager Anwendung - Mit verbessertem Feedback
 """
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QTabWidget,
@@ -185,13 +185,13 @@ class MainWindow(QMainWindow):
         # Verbindung prüfen
         connected = await self.api_client.check_connection()
         if connected:
-            self.status_bar.showMessage("Verbunden mit Server", 3000)
+            self.status_bar.showMessage("✓ Verbunden mit Server", 3000)
             await self.update_status()
             await self.load_routes()
             await self.update_metrics()
             await self.load_docker_containers()
         else:
-            self.status_bar.showMessage("Server nicht erreichbar")
+            self.status_bar.showMessage("✗ Server nicht erreichbar")
             self.show_error("Konnte keine Verbindung zum Server herstellen")
 
     async def update_status(self):
@@ -230,12 +230,15 @@ class MainWindow(QMainWindow):
             progress.close()
 
             if result.get("success"):
+                self.status_bar.showMessage("✓ Caddy erfolgreich installiert", 5000)
                 QMessageBox.information(self, "Erfolg", result.get("message", "Caddy erfolgreich installiert"))
             else:
+                self.status_bar.showMessage("✗ Installation fehlgeschlagen", 5000)
                 QMessageBox.critical(self, "Fehler", result.get("error", "Installation fehlgeschlagen"))
 
         except Exception as e:
             progress.close()
+            self.status_bar.showMessage("✗ Installationsfehler", 5000)
             QMessageBox.critical(self, "Fehler", f"Installationsfehler: {str(e)}")
         finally:
             await self.update_status()
@@ -252,10 +255,21 @@ class MainWindow(QMainWindow):
         self.status_timer.stop()
         self.metrics_timer.stop()
 
-        self.status_bar.showMessage("Starte Caddy...")
+        self.status_bar.showMessage("⏳ Starte Caddy Server...")
+
+        # Button deaktivieren
+        self.dashboard.btn_start.setEnabled(False)
+
         try:
-            await self.api_client.start_caddy()
+            result = await self.api_client.start_caddy()
+            if result.get("success"):
+                self.status_bar.showMessage("✓ Caddy erfolgreich gestartet", 5000)
+            else:
+                self.status_bar.showMessage(f"✗ Start fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}", 5000)
+        except Exception as e:
+            self.status_bar.showMessage(f"✗ Fehler: {str(e)}", 5000)
         finally:
+            self.dashboard.btn_start.setEnabled(True)
             self.status_timer.start(10000)
             self.metrics_timer.start(5000)
 
@@ -268,10 +282,21 @@ class MainWindow(QMainWindow):
         self.status_timer.stop()
         self.metrics_timer.stop()
 
-        self.status_bar.showMessage("Stoppe Caddy...")
+        self.status_bar.showMessage("⏳ Stoppe Caddy Server...")
+
+        # Button deaktivieren
+        self.dashboard.btn_stop.setEnabled(False)
+
         try:
-            await self.api_client.stop_caddy()
+            result = await self.api_client.stop_caddy()
+            if result.get("success"):
+                self.status_bar.showMessage("✓ Caddy erfolgreich gestoppt", 5000)
+            else:
+                self.status_bar.showMessage(f"✗ Stop fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}", 5000)
+        except Exception as e:
+            self.status_bar.showMessage(f"✗ Fehler: {str(e)}", 5000)
         finally:
+            self.dashboard.btn_stop.setEnabled(True)
             self.status_timer.start(10000)
             self.metrics_timer.start(5000)
 
@@ -284,10 +309,21 @@ class MainWindow(QMainWindow):
         self.status_timer.stop()
         self.metrics_timer.stop()
 
-        self.status_bar.showMessage("Starte Caddy neu...")
+        self.status_bar.showMessage("⏳ Starte Caddy neu...")
+
+        # Button deaktivieren
+        self.dashboard.btn_restart.setEnabled(False)
+
         try:
-            await self.api_client.restart_caddy()
+            result = await self.api_client.restart_caddy()
+            if result.get("success"):
+                self.status_bar.showMessage("✓ Caddy erfolgreich neugestartet", 5000)
+            else:
+                self.status_bar.showMessage(f"✗ Neustart fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}", 5000)
+        except Exception as e:
+            self.status_bar.showMessage(f"✗ Fehler: {str(e)}", 5000)
         finally:
+            self.dashboard.btn_restart.setEnabled(True)
             self.status_timer.start(10000)
             self.metrics_timer.start(5000)
 
@@ -297,12 +333,18 @@ class MainWindow(QMainWindow):
 
     async def add_route(self, route_data: dict):
         """Route hinzufügen"""
-        self.status_bar.showMessage("Füge Route hinzu...")
-        await self.api_client.add_route(
+        self.status_bar.showMessage(f"⏳ Füge Route {route_data['domain']} hinzu...")
+
+        result = await self.api_client.add_route(
             route_data["domain"],
             route_data["upstream"],
             route_data["path"]
         )
+
+        if result.get("success"):
+            self.status_bar.showMessage(f"✓ Route {route_data['domain']} erfolgreich hinzugefügt", 5000)
+        else:
+            self.status_bar.showMessage(f"✗ Fehler beim Hinzufügen der Route", 5000)
 
     # ============= Docker Management =============
 
@@ -312,8 +354,14 @@ class MainWindow(QMainWindow):
 
     async def remove_route(self, domain: str):
         """Route entfernen"""
-        self.status_bar.showMessage(f"Entferne Route {domain}...")
-        await self.api_client.remove_route(domain)
+        self.status_bar.showMessage(f"⏳ Entferne Route {domain}...")
+
+        result = await self.api_client.remove_route(domain)
+
+        if result.get("success"):
+            self.status_bar.showMessage(f"✓ Route {domain} erfolgreich entfernt", 5000)
+        else:
+            self.status_bar.showMessage(f"✗ Fehler beim Entfernen der Route", 5000)
 
     def load_docker_containers_wrapper(self):
         """Wrapper für async load_docker_containers"""
@@ -321,8 +369,14 @@ class MainWindow(QMainWindow):
 
     async def load_docker_containers(self):
         """Docker Container laden"""
+        self.status_bar.showMessage("⏳ Lade Docker Container...", 2000)
         containers = await self.api_client.get_docker_containers()
         self.docker_manager.update_containers(containers)
+
+        if containers:
+            self.status_bar.showMessage(f"✓ {len(containers)} Container geladen", 2000)
+        else:
+            self.status_bar.showMessage("ℹ Keine Docker Container gefunden", 2000)
 
     def start_docker_container_wrapper(self, container_id: str):
         """Wrapper für async start_docker_container"""
@@ -330,7 +384,18 @@ class MainWindow(QMainWindow):
 
     async def start_docker_container(self, container_id: str):
         """Docker Container starten"""
-        await self.api_client.control_docker_container(container_id, "start")
+        # Container-Name finden für besseres Feedback
+        container_name = container_id[:12]  # Kurze ID für Anzeige
+
+        self.status_bar.showMessage(f"⏳ Starte Container {container_name}...")
+
+        result = await self.api_client.control_docker_container(container_id, "start")
+
+        if result.get("success"):
+            self.status_bar.showMessage(f"✓ Container {container_name} erfolgreich gestartet", 5000)
+        else:
+            self.status_bar.showMessage(f"✗ Fehler beim Starten von Container {container_name}", 5000)
+
         await self.load_docker_containers()
 
     def stop_docker_container_wrapper(self, container_id: str):
@@ -339,7 +404,17 @@ class MainWindow(QMainWindow):
 
     async def stop_docker_container(self, container_id: str):
         """Docker Container stoppen"""
-        await self.api_client.control_docker_container(container_id, "stop")
+        container_name = container_id[:12]
+
+        self.status_bar.showMessage(f"⏳ Stoppe Container {container_name}...")
+
+        result = await self.api_client.control_docker_container(container_id, "stop")
+
+        if result.get("success"):
+            self.status_bar.showMessage(f"✓ Container {container_name} erfolgreich gestoppt", 5000)
+        else:
+            self.status_bar.showMessage(f"✗ Fehler beim Stoppen von Container {container_name}", 5000)
+
         await self.load_docker_containers()
 
     def restart_docker_container_wrapper(self, container_id: str):
@@ -348,7 +423,17 @@ class MainWindow(QMainWindow):
 
     async def restart_docker_container(self, container_id: str):
         """Docker Container neu starten"""
-        await self.api_client.control_docker_container(container_id, "restart")
+        container_name = container_id[:12]
+
+        self.status_bar.showMessage(f"⏳ Starte Container {container_name} neu...")
+
+        result = await self.api_client.control_docker_container(container_id, "restart")
+
+        if result.get("success"):
+            self.status_bar.showMessage(f"✓ Container {container_name} erfolgreich neugestartet", 5000)
+        else:
+            self.status_bar.showMessage(f"✗ Fehler beim Neustart von Container {container_name}", 5000)
+
         await self.load_docker_containers()
 
     # ============= Backup/Restore =============
@@ -365,8 +450,13 @@ class MainWindow(QMainWindow):
         )
 
         if ok:
-            self.status_bar.showMessage("Erstelle Backup...")
-            await self.api_client.backup_config(name if name else None)
+            self.status_bar.showMessage("⏳ Erstelle Backup...")
+            result = await self.api_client.backup_config(name if name else None)
+
+            if result.get("success"):
+                self.status_bar.showMessage(f"✓ Backup erfolgreich erstellt", 5000)
+            else:
+                self.status_bar.showMessage(f"✗ Backup fehlgeschlagen", 5000)
 
     def restore_backup_wrapper(self):
         """Wrapper für restore_backup"""
@@ -394,8 +484,14 @@ class MainWindow(QMainWindow):
             )
 
             if reply == QMessageBox.StandardButton.Yes:
-                self.status_bar.showMessage("Stelle Backup wieder her...")
-                await self.api_client.restore_config(name)
+                self.status_bar.showMessage("⏳ Stelle Backup wieder her...")
+                result = await self.api_client.restore_config(name)
+
+                if result.get("success"):
+                    self.status_bar.showMessage(f"✓ Backup erfolgreich wiederhergestellt", 5000)
+                else:
+                    self.status_bar.showMessage(f"✗ Wiederherstellung fehlgeschlagen", 5000)
+
                 await self.load_routes()
 
     def refresh_all_wrapper(self):
@@ -404,11 +500,12 @@ class MainWindow(QMainWindow):
 
     async def refresh_all(self):
         """Alle Daten aktualisieren"""
-        self.status_bar.showMessage("Aktualisiere...")
+        self.status_bar.showMessage("⏳ Aktualisiere alle Daten...")
         await self.update_status()
         await self.load_routes()
         await self.update_metrics()
-        self.status_bar.showMessage("Aktualisiert", 2000)
+        await self.load_docker_containers()
+        self.status_bar.showMessage("✓ Alle Daten aktualisiert", 3000)
 
     # ============= UI Helpers =============
 
@@ -416,17 +513,22 @@ class MainWindow(QMainWindow):
     def show_operation_result(self, result: dict):
         """Operation-Ergebnis anzeigen"""
         if result.get("success"):
-            self.status_bar.showMessage(
-                result.get("message", "Operation erfolgreich"), 3000
-            )
+            message = result.get("message", "Operation erfolgreich")
+            self.status_bar.showMessage(f"✓ {message}", 5000)
         else:
-            self.show_error(result.get("error", "Operation fehlgeschlagen"))
+            error = result.get("error", "Operation fehlgeschlagen")
+            self.status_bar.showMessage(f"✗ {error}", 5000)
 
     @Slot(str)
     def show_error(self, message: str):
         """Fehlermeldung anzeigen"""
-        self.status_bar.showMessage(f"Fehler: {message}", 5000)
-        QMessageBox.critical(self, "Fehler", message)
+        # Nur Dialog zeigen, wenn es kein Timeout ist
+        if "timeout" not in message.lower() and "readtimeout" not in message.lower():
+            self.status_bar.showMessage(f"✗ {message}", 5000)
+            QMessageBox.critical(self, "Fehler", message)
+        else:
+            # Bei Timeouts nur in StatusBar
+            self.status_bar.showMessage(f"⚠ Verbindungsproblem", 3000)
 
     def show_about(self):
         """Über-Dialog anzeigen"""
