@@ -1,3 +1,4 @@
+```
 caddy-manager/
 │
 ├── server/                # Backend (läuft als eigenständiger Prozess)
@@ -23,4 +24,4 @@ caddy-manager/
 ├── config/              # Laufzeit-Konfigurationen
 ├── data/                # Persistente Daten
 └── run_*.py             # Starter-Scripts mit Path-Setup
-
+```
