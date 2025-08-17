@@ -111,6 +111,8 @@ class RouteManagerWidget(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(["Domain", "Upstream", "Pfad", "Aktionen"])
+        self.table.verticalHeader().setDefaultSectionSize(75)
+
 
         # Header anpassen
         header = self.table.horizontalHeader()
