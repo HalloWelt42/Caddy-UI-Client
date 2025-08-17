@@ -1,5 +1,5 @@
 """
-Route Manager Widget - Verwaltung der Caddy Routes
+Route Manager Widget - Verwaltung der Caddy Routes - Vereinheitlichtes Design
 """
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFormLayout
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QDesktopServices, QCursor
+from PySide6.QtGui import QDesktopServices, QCursor, QColor
 import qtawesome as qta
 
 
@@ -96,7 +96,7 @@ class RouteManagerWidget(QWidget):
         header_layout.addStretch()
 
         # Buttons
-        self.btn_add = QPushButton(qta.icon('fa5s.plus'), "Route hinzufügen")
+        self.btn_add = QPushButton(qta.icon('fa5s.plus', color='white'), "Route hinzufügen")
         self.btn_add.setObjectName("primaryButton")
         self.btn_add.clicked.connect(self.show_add_dialog)
         header_layout.addWidget(self.btn_add)
@@ -111,8 +111,9 @@ class RouteManagerWidget(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(["Domain", "Upstream", "Pfad", "Aktionen"])
-        self.table.verticalHeader().setDefaultSectionSize(75)
 
+        # Einheitliche Zeilenhöhe
+        self.table.verticalHeader().setDefaultSectionSize(45)
 
         # Header anpassen
         header = self.table.horizontalHeader()
@@ -120,7 +121,7 @@ class RouteManagerWidget(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(3, 100)
+        self.table.setColumnWidth(3, 120)  # Einheitliche Breite
 
         # Alternating row colors
         self.table.setAlternatingRowColors(True)
@@ -158,13 +159,17 @@ class RouteManagerWidget(QWidget):
             row = self.table.rowCount()
             self.table.insertRow(row)
 
-            # Domain als klickbarer Link
+            # Domain als klickbarer Link mit Icon
             domain = route.get("domain", "")
             domain_item = QTableWidgetItem(domain)
             domain_item.setFlags(domain_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
+            # Link Icon hinzufügen
+            link_icon = qta.icon('fa5s.external-link-alt', color='#3498db')
+            domain_item.setIcon(link_icon)
+
             # Link-Styling (blau und unterstrichen)
-            domain_item.setForeground(Qt.GlobalColor.blue)
+            domain_item.setForeground(QColor('#3498db'))
             font = domain_item.font()
             font.setUnderline(True)
             domain_item.setFont(font)
@@ -181,19 +186,32 @@ class RouteManagerWidget(QWidget):
 
             self.table.setItem(row, 0, domain_item)
 
-            # Upstream
-            upstream_item = QTableWidgetItem(route.get("upstream", ""))
+            # Upstream mit Icon
+            upstream = route.get("upstream", "")
+            upstream_item = QTableWidgetItem(upstream)
             upstream_item.setFlags(upstream_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+
+            # Server Icon für Upstream
+            server_icon = qta.icon('fa5s.server', color='#7f8c8d')
+            upstream_item.setIcon(server_icon)
+
             self.table.setItem(row, 1, upstream_item)
 
-            # Path
-            path_item = QTableWidgetItem(route.get("path", "/"))
+            # Path mit Icon
+            path = route.get("path", "/")
+            path_item = QTableWidgetItem(path)
             path_item.setFlags(path_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+
+            # Route Icon für Path
+            path_icon = qta.icon('fa5s.route', color='#7f8c8d')
+            path_item.setIcon(path_icon)
+
             self.table.setItem(row, 2, path_item)
 
-            # Delete Button
-            delete_btn = QPushButton(qta.icon('fa5s.trash', color='#c0392b'), "")
-            delete_btn.setMaximumWidth(80)
+            # Delete Button - konsistent mit Docker Manager
+            delete_btn = QPushButton(qta.icon('fa5s.trash', color='#c0392b'), "Löschen")
+            delete_btn.setMaximumWidth(100)
+            delete_btn.setToolTip(f"Route {domain} löschen")
             delete_btn.clicked.connect(lambda checked, d=route.get("domain"): self.confirm_delete(d))
             self.table.setCellWidget(row, 3, delete_btn)
 
@@ -216,13 +234,23 @@ class RouteManagerWidget(QWidget):
 
     def confirm_delete(self, domain: str):
         """Löschbestätigung anzeigen"""
-        reply = QMessageBox.question(
-            self,
-            "Route löschen",
-            f"Möchten Sie die Route für '{domain}' wirklich löschen?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Route löschen")
+        msg_box.setText(f"Möchten Sie die Route für '{domain}' wirklich löschen?")
+        msg_box.setInformativeText("Diese Aktion kann nicht rückgängig gemacht werden.")
+        msg_box.setIcon(QMessageBox.Icon.Warning)
+        msg_box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
         )
+        msg_box.setDefaultButton(QMessageBox.StandardButton.Cancel)
 
-        if reply == QMessageBox.StandardButton.Yes:
+        # Button-Texte anpassen
+        yes_button = msg_box.button(QMessageBox.StandardButton.Yes)
+        yes_button.setText("Löschen")
+        yes_button.setIcon(qta.icon('fa5s.trash', color='#c0392b'))
+
+        cancel_button = msg_box.button(QMessageBox.StandardButton.Cancel)
+        cancel_button.setText("Abbrechen")
+
+        if msg_box.exec() == QMessageBox.StandardButton.Yes:
             self.remove_route.emit(domain)
