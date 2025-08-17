@@ -750,15 +750,15 @@ class CaddyService:
             if not name:
                 name = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            backup_file = settings.backups_dir / f"caddy_config_{name}.json"
+            # GEÄNDERT: Backup der Caddyfile statt JSON
+            backup_file = settings.backups_dir / f"caddyfile_{name}.backup"
+            settings.backups_dir.mkdir(parents=True, exist_ok=True)
 
-            # Aktuelle Config laden
-            if CADDY_JSON_CONFIG.exists():
-                with open(CADDY_JSON_CONFIG, "r") as f:
-                    config = json.load(f)
-
-                with open(backup_file, "w") as f:
-                    json.dump(config, f, indent=2)
+            # Prüfe ob Caddyfile existiert
+            if CADDYFILE.exists():
+                # Kopiere Caddyfile als Backup
+                import shutil
+                shutil.copy2(CADDYFILE, backup_file)
 
                 return {
                     "success": True,
@@ -766,10 +766,24 @@ class CaddyService:
                     "path": str(backup_file)
                 }
             else:
-                return {
-                    "success": False,
-                    "error": "Keine Konfiguration zum Sichern vorhanden"
-                }
+                # Erstelle Default-Config wenn keine existiert
+                await self.create_default_config()
+
+                # Dann nochmal versuchen
+                if CADDYFILE.exists():
+                    import shutil
+                    shutil.copy2(CADDYFILE, backup_file)
+
+                    return {
+                        "success": True,
+                        "message": f"Default-Config gesichert: {backup_file.name}",
+                        "path": str(backup_file)
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": "Keine Konfiguration zum Sichern vorhanden"
+                    }
 
         except Exception as e:
             return {

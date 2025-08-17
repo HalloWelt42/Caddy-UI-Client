@@ -1,5 +1,5 @@
 """
-API Client für die Kommunikation mit dem FastAPI Server
+API Client für die Kommunikation mit dem FastAPI Server - Backup Fix
 """
 import httpx
 import asyncio
@@ -264,7 +264,8 @@ class APIClient(QObject):
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            self.error_occurred.emit(f"Docker-Fehler: {str(e)}")
+            # Docker-Fehler nicht als Error anzeigen (könnte einfach nicht installiert sein)
+            print(f"Docker nicht verfügbar: {str(e)}")
             return []
 
     async def control_docker_container(self, container_id: str, action: str) -> Dict[str, Any]:
@@ -281,19 +282,62 @@ class APIClient(QObject):
             self.error_occurred.emit(f"Docker-Control-Fehler: {str(e)}")
             return {"success": False, "error": str(e)}
 
-    # ============= Backup/Restore =============
+    # ============= Backup/Restore - FIXED =============
 
     async def backup_config(self, name: Optional[str] = None) -> Dict[str, Any]:
-        """Konfiguration sichern"""
+        """Konfiguration sichern - FIXED"""
         try:
+            # FIX: Sende korrektes JSON-Format
+            # Server erwartet entweder {"name": "string"} oder {"name": null}
+            # NICHT {} wenn name None ist
+
+            if name and name.strip():  # Wenn name vorhanden und nicht leer
+                payload = {"name": name.strip()}
+            else:
+                payload = {"name": None}  # Explizit None senden, nicht weglassen
+
+            print(f"Backup Request Payload: {payload}")  # Debug
+
             response = await self.client.post(
                 f"{self.base_url}/api/caddy/backup",
-                json={"name": name}
+                json=payload,
+                headers={"Content-Type": "application/json"}  # Expliziter Content-Type
             )
-            response.raise_for_status()
-            data = response.json()
-            self.operation_completed.emit(data)
-            return data
+
+            print(f"Backup Response Status: {response.status_code}")  # Debug
+
+            if response.status_code == 200:
+                data = response.json()
+                self.operation_completed.emit(data)
+                return data
+            else:
+                # Detaillierte Fehleranalyse
+                try:
+                    error_data = response.json()
+                    if "detail" in error_data:
+                        # FastAPI Validation Error Format
+                        if isinstance(error_data["detail"], list):
+                            errors = []
+                            for err in error_data["detail"]:
+                                loc = " -> ".join(str(x) for x in err.get("loc", []))
+                                msg = err.get("msg", "Unknown error")
+                                errors.append(f"{loc}: {msg}")
+                            error_msg = "Validation errors:\n" + "\n".join(errors)
+                        else:
+                            error_msg = str(error_data["detail"])
+                    else:
+                        error_msg = str(error_data)
+                except:
+                    error_msg = response.text or f"HTTP {response.status_code}"
+
+                print(f"Backup Error: {error_msg}")  # Debug
+                self.error_occurred.emit(f"Backup-Fehler: {error_msg}")
+                return {"success": False, "error": error_msg}
+
+        except httpx.HTTPStatusError as e:
+            error_msg = f"HTTP {e.response.status_code}: {e.response.text}"
+            self.error_occurred.emit(f"Backup-Fehler: {error_msg}")
+            return {"success": False, "error": error_msg}
         except Exception as e:
             self.error_occurred.emit(f"Backup-Fehler: {str(e)}")
             return {"success": False, "error": str(e)}
