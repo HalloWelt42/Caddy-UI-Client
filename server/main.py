@@ -28,11 +28,18 @@ async def lifespan(app: FastAPI):
     await monitor_service.start_monitoring()
     print("📊 Monitoring gestartet")
 
+    # Prüfe ob Caddy bereits läuft
+    from server.api.services import caddy_service
+    status = await caddy_service.get_status()
+    if status["status"] == "running":
+        print(f"✅ Caddy läuft bereits (PID: {status.get('pid')})")
+
     yield
 
     # Shutdown
     await monitor_service.stop_monitoring()
     print("👋 Server wird heruntergefahren")
+    print("ℹ️  Caddy läuft weiter im Hintergrund (nutze UI zum Stoppen)")
 
 # FastAPI App erstellen
 app = FastAPI(

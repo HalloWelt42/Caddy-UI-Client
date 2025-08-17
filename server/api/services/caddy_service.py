@@ -3,7 +3,6 @@ Caddy Service - Installation und Verwaltung
 """
 import sys
 from pathlib import Path
-
 # Projekt-Root zum Python-Path hinzufügen
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
@@ -15,6 +14,7 @@ import platform
 import subprocess
 import tarfile
 import tempfile
+import psutil
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from enum import Enum
@@ -22,13 +22,11 @@ from enum import Enum
 from server.config.settings import settings
 from shared.utils.paths import CADDY_JSON_CONFIG, CADDY_BINARY, CERTS_DIR, CADDYFILE
 
-
 class CaddyStatus(str, Enum):
     RUNNING = "running"
     STOPPED = "stopped"
     NOT_INSTALLED = "not_installed"
     ERROR = "error"
-
 
 class CaddyService:
     def __init__(self):
@@ -46,27 +44,75 @@ class CaddyService:
                 "message": "Caddy ist nicht installiert"
             }
 
+        # Prüfe zuerst ob Caddy via Admin API erreichbar ist
         try:
-            # Prüfe ob Caddy läuft via Admin API
             response = await self.client.get(f"{settings.caddy_api_url}/config/")
             if response.status_code == 200:
+                # Caddy läuft und API ist erreichbar
+                # Versuche PID aus Datei zu lesen
+                pid = None
+                pid_file = settings.data_dir / "caddy.pid"
+                if pid_file.exists():
+                    try:
+                        with open(pid_file, "r") as f:
+                            pid = int(f.read().strip())
+                    except:
+                        pass
+
                 return {
                     "status": CaddyStatus.RUNNING,
                     "message": "Caddy läuft",
                     "admin_api": True,
+                    "pid": pid,
                     "config": response.json() if response.content else {}
                 }
         except (httpx.ConnectError, httpx.TimeoutException):
             pass
 
-        # Prüfe ob Prozess läuft
-        if self.process and self.process.poll() is None:
-            return {
-                "status": CaddyStatus.RUNNING,
-                "message": "Caddy-Prozess läuft (Admin API nicht erreichbar)",
-                "admin_api": False
-            }
+        # Admin API nicht erreichbar, prüfe ob Prozess läuft
+        # Methode 1: Gespeicherte PID prüfen
+        pid_file = settings.data_dir / "caddy.pid"
+        if pid_file.exists():
+            try:
+                with open(pid_file, "r") as f:
+                    pid = int(f.read().strip())
 
+                # Prüfe ob Prozess mit dieser PID existiert
+                if psutil.pid_exists(pid):
+                    try:
+                        proc = psutil.Process(pid)
+                        if "caddy" in proc.name().lower():
+                            return {
+                                "status": CaddyStatus.RUNNING,
+                                "message": f"Caddy läuft (PID: {pid}, Admin API nicht erreichbar)",
+                                "admin_api": False,
+                                "pid": pid
+                            }
+                    except:
+                        pass
+            except:
+                pass
+
+        # Methode 2: Nach Caddy-Prozessen suchen
+        try:
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    if 'caddy' in proc.info['name'].lower():
+                        cmdline = proc.info.get('cmdline', [])
+                        # Prüfe ob es unser Caddy ist (mit unserer Config)
+                        if any(str(CADDYFILE) in str(arg) for arg in cmdline):
+                            return {
+                                "status": CaddyStatus.RUNNING,
+                                "message": f"Caddy läuft (PID: {proc.info['pid']})",
+                                "admin_api": False,
+                                "pid": proc.info['pid']
+                            }
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+        except:
+            pass
+
+        # Caddy läuft nicht
         return {
             "status": CaddyStatus.STOPPED,
             "message": "Caddy ist gestoppt"
@@ -228,32 +274,160 @@ class CaddyService:
 
             print(f"🚀 Starte Caddy mit Caddyfile: {CADDYFILE}")
 
-            # Starte Caddy mit Caddyfile
-            self.process = subprocess.Popen(
-                [
+            # Log-Datei für Caddy
+            log_file = settings.logs_dir / "caddy.log"
+            settings.logs_dir.mkdir(parents=True, exist_ok=True)
+
+            # WICHTIG: Starte Caddy als unabhängigen Prozess
+            if platform.system() == "Darwin":  # macOS
+                # macOS: Drei Optionen für unabhängige Prozesse
+
+                # Option 1: Einfachste Methode - ohne nohup/setsid
+                cmd = [
                     str(CADDY_BINARY),
                     "run",
                     "--config", str(CADDYFILE),
                     "--adapter", "caddyfile"
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=str(settings.project_root)
-            )
+                ]
+
+                # Versuche zuerst die einfache Methode
+                try:
+                    with open(log_file, 'a') as log:
+                        self.process = subprocess.Popen(
+                            cmd,
+                            stdout=log,
+                            stderr=subprocess.STDOUT,
+                            stdin=subprocess.DEVNULL,
+                            cwd=str(settings.project_root),
+                            start_new_session=True  # Ohne preexec_fn
+                        )
+                    print(f"✅ Caddy gestartet mit start_new_session")
+
+                except Exception as e1:
+                    print(f"⚠️ start_new_session fehlgeschlagen: {e1}, versuche nohup...")
+
+                    # Option 2: Mit nohup (falls verfügbar)
+                    try:
+                        nohup_cmd = ["/usr/bin/nohup"] + cmd
+
+                        with open(log_file, 'a') as log:
+                            self.process = subprocess.Popen(
+                                nohup_cmd,
+                                stdout=log,
+                                stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL,
+                                cwd=str(settings.project_root)
+                            )
+                        print(f"✅ Caddy gestartet mit nohup")
+
+                    except Exception as e2:
+                        print(f"⚠️ nohup fehlgeschlagen: {e2}, verwende Standard-Methode...")
+
+                        # Option 3: Standard-Methode ohne special flags
+                        with open(log_file, 'a') as log:
+                            self.process = subprocess.Popen(
+                                cmd,
+                                stdout=log,
+                                stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL,
+                                cwd=str(settings.project_root)
+                            )
+                        print(f"✅ Caddy gestartet (Standard-Methode)")
+
+            elif platform.system() == "Windows":
+                # Windows: CREATE_NEW_PROCESS_GROUP macht Prozess unabhängig
+                CREATE_NEW_PROCESS_GROUP = 0x00000200
+                DETACHED_PROCESS = 0x00000008
+
+                with open(log_file, 'a') as log:
+                    self.process = subprocess.Popen(
+                        [
+                            str(CADDY_BINARY),
+                            "run",
+                            "--config", str(CADDYFILE),
+                            "--adapter", "caddyfile"
+                        ],
+                        stdout=log,
+                        stderr=subprocess.STDOUT,
+                        stdin=subprocess.DEVNULL,
+                        cwd=str(settings.project_root),
+                        creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+                    )
+                print(f"✅ Caddy gestartet (Windows, unabhängiger Prozess)")
+
+            else:
+                # Linux/Unix: Standard-Methode mit start_new_session
+                with open(log_file, 'a') as log:
+                    self.process = subprocess.Popen(
+                        [
+                            str(CADDY_BINARY),
+                            "run",
+                            "--config", str(CADDYFILE),
+                            "--adapter", "caddyfile"
+                        ],
+                        stdout=log,
+                        stderr=subprocess.STDOUT,
+                        stdin=subprocess.DEVNULL,
+                        cwd=str(settings.project_root),
+                        start_new_session=True
+                    )
+                print(f"✅ Caddy gestartet (Linux, neue Session)")
+
+            # Speichere PID für späteren Zugriff
+            pid = self.process.pid
+            pid_file = settings.data_dir / "caddy.pid"
+            settings.data_dir.mkdir(parents=True, exist_ok=True)
+            with open(pid_file, "w") as f:
+                f.write(str(pid))
+
+            print(f"✅ Caddy gestartet mit PID: {pid}")
 
             # Warte kurz und prüfe Status
             await asyncio.sleep(2)
 
+            # Prüfe ob Prozess noch läuft
             if self.process.poll() is None:
+                # Zusätzlich prüfen ob Caddy wirklich läuft (via psutil)
+                try:
+                    if psutil.pid_exists(pid):
+                        proc = psutil.Process(pid)
+                        if "caddy" in proc.name().lower():
+                            return {
+                                "success": True,
+                                "message": f"Caddy erfolgreich gestartet (PID: {pid})",
+                                "pid": pid,
+                                "independent": True
+                            }
+                except:
+                    # Fallback: Prozess läuft noch, also nehmen wir an es ist OK
+                    return {
+                        "success": True,
+                        "message": f"Caddy gestartet (PID: {pid})",
+                        "pid": pid,
+                        "independent": True
+                    }
+
                 return {
                     "success": True,
-                    "message": "Caddy erfolgreich gestartet",
-                    "pid": self.process.pid
+                    "message": f"Caddy gestartet (PID: {pid})",
+                    "pid": pid,
+                    "independent": True
                 }
             else:
-                stderr = self.process.stderr.read().decode() if self.process.stderr else ""
-                stdout = self.process.stdout.read().decode() if self.process.stdout else ""
-                error_msg = f"Caddy konnte nicht gestartet werden.\nSTDERR: {stderr}\nSTDOUT: {stdout}"
+                # Prozess ist bereits beendet - lies Logs für Fehlerdetails
+                error_msg = "Caddy konnte nicht gestartet werden."
+
+                # Versuche Log-Datei zu lesen für mehr Details
+                if log_file.exists():
+                    try:
+                        with open(log_file, 'r') as f:
+                            # Lies die letzten 20 Zeilen
+                            lines = f.readlines()
+                            last_lines = lines[-20:] if len(lines) > 20 else lines
+                            error_msg += f"\n\nLetzte Log-Einträge:\n{''.join(last_lines)}"
+                    except:
+                        pass
+
                 print(f"❌ {error_msg}")
                 return {
                     "success": False,
@@ -272,10 +446,15 @@ class CaddyService:
     async def stop(self) -> Dict[str, Any]:
         """Caddy stoppen"""
         try:
-            # Versuche über Admin API
+            # Methode 1: Über Admin API
             try:
                 response = await self.client.post(f"{settings.caddy_api_url}/stop")
                 if response.status_code == 200:
+                    # Lösche PID-Datei
+                    pid_file = settings.data_dir / "caddy.pid"
+                    if pid_file.exists():
+                        pid_file.unlink()
+
                     self.process = None
                     return {
                         "success": True,
@@ -284,7 +463,31 @@ class CaddyService:
             except:
                 pass
 
-            # Fallback: Prozess beenden
+            # Methode 2: Über gespeicherte PID
+            pid_file = settings.data_dir / "caddy.pid"
+            if pid_file.exists():
+                try:
+                    with open(pid_file, "r") as f:
+                        pid = int(f.read().strip())
+
+                    if psutil.pid_exists(pid):
+                        proc = psutil.Process(pid)
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=5)
+                        except psutil.TimeoutExpired:
+                            proc.kill()
+
+                        pid_file.unlink()
+                        self.process = None
+                        return {
+                            "success": True,
+                            "message": f"Caddy-Prozess (PID: {pid}) beendet"
+                        }
+                except Exception as e:
+                    print(f"Fehler beim Stoppen via PID: {e}")
+
+            # Methode 3: Prozess-Object wenn vorhanden
             if self.process:
                 self.process.terminate()
                 try:
@@ -297,6 +500,28 @@ class CaddyService:
                     "success": True,
                     "message": "Caddy-Prozess beendet"
                 }
+
+            # Methode 4: Nach Caddy-Prozess suchen
+            try:
+                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                    try:
+                        if 'caddy' in proc.info['name'].lower():
+                            cmdline = proc.info.get('cmdline', [])
+                            if any(str(CADDYFILE) in str(arg) for arg in cmdline):
+                                proc.terminate()
+                                try:
+                                    proc.wait(timeout=5)
+                                except psutil.TimeoutExpired:
+                                    proc.kill()
+
+                                return {
+                                    "success": True,
+                                    "message": f"Caddy-Prozess (PID: {proc.info['pid']}) gefunden und beendet"
+                                }
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+            except Exception as e:
+                print(f"Fehler bei Prozess-Suche: {e}")
 
             return {
                 "success": False,
