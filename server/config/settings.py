@@ -15,9 +15,11 @@ from shared.utils.paths import *
 
 class Settings(BaseSettings):
     # Server-Einstellungen
-    host: str = Field(default="127.0.0.1", description="Server Host")
-    port: int = Field(default=8000, description="Server Port")
+    host: str = Field(default="127.0.0.1", description="Server Host", alias="HOST")
+    port: int = Field(default=8000, description="Server Port",alias="PORT")
     reload: bool = Field(default=True, description="Auto-Reload bei Änderungen")
+    api_server: str = Field(default="http://127.0.0.1:8000", description="API Server URL", alias="SERVER")
+    api_websocket: str = Field(default="ws://127.0.0.1:8000", description="WebSocket API URL", alias="WEBSOCKET")
 
     # Caddy-Einstellungen
     caddy_admin_host: str = Field(default="localhost", description="Caddy Admin API Host")

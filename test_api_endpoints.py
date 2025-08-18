@@ -10,9 +10,12 @@ import time
 import sys
 from typing import Dict, Any, Optional
 from datetime import datetime
+from server.config.settings import settings
+
+from typing_inspection.typing_objects import alias
 
 # Konfiguration
-BASE_URL = "http://localhost:8000"
+BASE_URL = settings.api_server
 TIMEOUT = 10
 
 
@@ -363,7 +366,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Test Caddy Manager API Endpoints")
-    parser.add_argument("--url", default="http://localhost:8000", help="Base URL of the API")
+    parser.add_argument("--url", default="http://localhost:8000", help="Base URL of the API", alias="API_SERVER")
     parser.add_argument("--timeout", type=int, default=10, help="Request timeout in seconds")
     parser.add_argument("--interactive", "-i", action="store_true", help="Interactive mode")
 

@@ -6,6 +6,8 @@ import asyncio
 from typing import Dict, Any, List, Optional
 from PySide6.QtCore import QObject, Signal
 import json
+from server.config.settings import settings
+
 
 
 class APIClient(QObject):
@@ -97,7 +99,7 @@ class APIClient(QObject):
         import websockets
 
         try:
-            uri = f"ws://localhost:8000/api/caddy/install/progress"
+            uri = f"{settings.api_websocket}/api/caddy/install/progress"
             async with websockets.connect(uri) as websocket:
                 while True:
                     message = await websocket.recv()
@@ -244,7 +246,7 @@ class APIClient(QObject):
         import websockets
 
         try:
-            uri = f"ws://localhost:8000/api/monitoring/metrics/stream"
+            uri = f"ws://localhost:8044/api/monitoring/metrics/stream"
             async with websockets.connect(uri) as websocket:
                 while True:
                     message = await websocket.recv()
