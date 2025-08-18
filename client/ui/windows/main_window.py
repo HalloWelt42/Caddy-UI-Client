@@ -14,6 +14,7 @@ from client.ui.widgets.dashboard import DashboardWidget
 from client.ui.widgets.route_manager import RouteManagerWidget
 from client.ui.widgets.docker_manager import DockerManagerWidget
 from client.services.api_client import APIClient
+from server.config.settings import settings
 
 
 class MainWindow(QMainWindow):
@@ -21,7 +22,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.api_client = APIClient()
+        self.api_client = APIClient(
+            base_url=settings.api_server
+        )
         self.setup_ui()
         self.setup_connections()
         self.setup_timers()

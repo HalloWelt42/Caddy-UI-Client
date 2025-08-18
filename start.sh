@@ -20,10 +20,14 @@ NC='\033[0m' # No Color
 PROJECT_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$PROJECT_ROOT"
 
+# .env laden
+if [ -f .env ]; then
+  export $(grep -v '^#' .env | xargs)
+fi
+
 # Konfiguration
 VENV_DIR=".venv"
-BACKEND_PORT=8000
-FRONTEND_DELAY=5
+BACKEND_PORT=$PORT
 PYTHON_MIN_VERSION="3.9"
 
 # PID-Dateien für Prozess-Management
@@ -209,8 +213,6 @@ start_backend() {
 
 # Frontend starten
 start_frontend() {
-    print_info "Starte Frontend (PySide6) in $FRONTEND_DELAY Sekunden..."
-    sleep $FRONTEND_DELAY
 
     # Prüfe ob Frontend bereits läuft
     if [ -f "$FRONTEND_PID_FILE" ]; then
